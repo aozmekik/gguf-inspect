@@ -1,0 +1,30 @@
+# Rust build output
+/target/
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/
+
+# Snapshot review leftovers (insta writes these when a snapshot changes)
+*.snap.new
+*.pending-snap
+
+# Synthetic model files produced by examples and benchmarks
+*.gguf
+
+# Coverage and profiling output
+/coverage/
+*.profraw
+*.profdata
+lcov.info
+
+# Editors and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local environment
+.env
+.env.*
