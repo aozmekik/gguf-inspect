@@ -48,6 +48,8 @@
 //! [GGUF]: https://github.com/ggml-org/ggml/blob/a05c9922613c6a2230dbb1d0de679519ecafb4f0/docs/gguf.md
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+// A library has no business printing.
+#![deny(clippy::print_stdout, clippy::print_stderr)]
 
 pub mod diff;
 mod error;

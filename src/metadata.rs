@@ -237,6 +237,26 @@ impl MetadataValue {
             _ => None,
         }
     }
+
+    /// Exact equality: same type and value, with floats compared by bit
+    /// pattern. Unlike `==`, a `NaN` equals itself and `0.0` differs from `-0.0`.
+    ///
+    /// ```
+    /// use gguf_inspect::MetadataValue;
+    ///
+    /// let nan = MetadataValue::F32(f32::NAN);
+    /// assert!(nan != nan.clone());
+    /// assert!(nan.bitwise_eq(&nan));
+    /// assert!(!MetadataValue::F64(0.0).bitwise_eq(&MetadataValue::F64(-0.0)));
+    /// ```
+    pub fn bitwise_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::F32(x), Self::F32(y)) => x.to_bits() == y.to_bits(),
+            (Self::F64(x), Self::F64(y)) => x.to_bits() == y.to_bits(),
+            (Self::Array(x), Self::Array(y)) => x.bitwise_eq(y),
+            _ => self == other,
+        }
+    }
 }
 
 /// A homogeneous metadata array.
@@ -354,6 +374,25 @@ impl MetadataArray {
             Self::I32(v) => conv(v, |x| u64::try_from(x).ok()),
             Self::I64(v) => conv(v, |x| u64::try_from(x).ok()),
             _ => None,
+        }
+    }
+
+    /// Exact equality with floats compared by bit pattern; see
+    /// [`MetadataValue::bitwise_eq`].
+    pub fn bitwise_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::F32(x), Self::F32(y)) => x
+                .iter()
+                .map(|v| v.to_bits())
+                .eq(y.iter().map(|v| v.to_bits())),
+            (Self::F64(x), Self::F64(y)) => x
+                .iter()
+                .map(|v| v.to_bits())
+                .eq(y.iter().map(|v| v.to_bits())),
+            (Self::Array(x), Self::Array(y)) => {
+                x.len() == y.len() && x.iter().zip(y).all(|(p, q)| p.bitwise_eq(q))
+            }
+            _ => self == other,
         }
     }
 

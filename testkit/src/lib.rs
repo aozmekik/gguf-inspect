@@ -401,7 +401,8 @@ pub struct SyntheticModel {
 
 impl SyntheticModel {
     /// Shaped like an 8B-parameter Llama-3 model (vocab 128 256, 32 layers,
-    /// 32 heads, 8 KV heads), quantized like a typical `Q4_K_M` file.
+    /// 32 heads, 8 KV heads), with `q4_K` weights and `q6_K` for `attn_v`,
+    /// `ffn_down` and `output`: a simplified `Q4_K_M`-style mix.
     pub fn llama3_8b_like() -> Self {
         Self {
             name: "Synthetic Llama-3-8B-shaped".into(),
@@ -447,7 +448,7 @@ impl SyntheticModel {
         let vocab = usize::try_from(self.vocab_size).expect("vocab fits in memory");
         let tokens: Vec<String> = (0..vocab).map(|i| format!("tok_{i}")).collect();
         #[allow(clippy::cast_precision_loss)]
-        let scores: Vec<f32> = (0..vocab).map(|i| -(i as f32)).collect();
+        let scores: Vec<f32> = (0..vocab).map(|i| 0.0 - i as f32).collect();
         let token_types: Vec<i32> = (0..vocab).map(|i| if i < 3 { 3 } else { 1 }).collect();
 
         let metadata = [

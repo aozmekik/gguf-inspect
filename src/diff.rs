@@ -1,7 +1,6 @@
 //! Structural comparison of two GGUF headers.
 
-use crate::metadata::{MetadataArray, MetadataValue};
-use crate::{GgufFile, GgufVersion, TensorInfo};
+use crate::{GgufFile, GgufVersion, MetadataValue, TensorInfo};
 
 /// Differences between two files, borrowing from both.
 #[derive(Debug, Clone, PartialEq)]
@@ -101,7 +100,7 @@ pub fn diff<'a>(old: &'a GgufFile, new: &'a GgufFile) -> FileDiff<'a> {
     for (key, value) in old.metadata().iter() {
         match new.metadata().get(key) {
             None => metadata.push(MetadataChange::Removed { key, value }),
-            Some(other) if !identical(value, other) => metadata.push(MetadataChange::Changed {
+            Some(other) if !value.bitwise_eq(other) => metadata.push(MetadataChange::Changed {
                 key,
                 old: value,
                 new: other,
@@ -140,64 +139,31 @@ pub fn diff<'a>(old: &'a GgufFile, new: &'a GgufFile) -> FileDiff<'a> {
     }
 }
 
-/// Exact equality, comparing floats by their bits.
-fn identical(a: &MetadataValue, b: &MetadataValue) -> bool {
-    match (a, b) {
-        (MetadataValue::F32(x), MetadataValue::F32(y)) => x.to_bits() == y.to_bits(),
-        (MetadataValue::F64(x), MetadataValue::F64(y)) => x.to_bits() == y.to_bits(),
-        (MetadataValue::Array(x), MetadataValue::Array(y)) => identical_arrays(x, y),
-        _ => a == b,
-    }
-}
-
-fn identical_arrays(a: &MetadataArray, b: &MetadataArray) -> bool {
-    match (a, b) {
-        (MetadataArray::F32(x), MetadataArray::F32(y)) => x
-            .iter()
-            .map(|v| v.to_bits())
-            .eq(y.iter().map(|v| v.to_bits())),
-        (MetadataArray::F64(x), MetadataArray::F64(y)) => x
-            .iter()
-            .map(|v| v.to_bits())
-            .eq(y.iter().map(|v| v.to_bits())),
-        (MetadataArray::Array(x), MetadataArray::Array(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| identical_arrays(p, q))
-        }
-        _ => a == b,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{MetadataArray, MetadataValue};
 
     #[test]
     fn floats_compare_by_bits() {
         let nan = MetadataValue::F32(f32::NAN);
-        assert!(identical(&nan, &nan));
-        assert!(!identical(
-            &MetadataValue::F64(0.0),
-            &MetadataValue::F64(-0.0)
-        ));
+        assert!(nan.bitwise_eq(&nan));
+        assert!(!MetadataValue::F64(0.0).bitwise_eq(&MetadataValue::F64(-0.0)));
         let arr = |v: Vec<f32>| MetadataValue::Array(MetadataArray::F32(v));
-        assert!(identical(
-            &arr(vec![f32::NAN, 1.0]),
-            &arr(vec![f32::NAN, 1.0])
-        ));
-        assert!(!identical(&arr(vec![1.0]), &arr(vec![1.0, 2.0])));
+        assert!(arr(vec![f32::NAN, 1.0]).bitwise_eq(&arr(vec![f32::NAN, 1.0])));
+        assert!(!arr(vec![1.0]).bitwise_eq(&arr(vec![1.0, 2.0])));
     }
 
     #[test]
     fn types_matter() {
-        assert!(!identical(&MetadataValue::U32(1), &MetadataValue::U64(1)));
+        assert!(!MetadataValue::U32(1).bitwise_eq(&MetadataValue::U64(1)));
         let nested = |v: Vec<MetadataArray>| MetadataValue::Array(MetadataArray::Array(v));
-        assert!(identical(
-            &nested(vec![MetadataArray::F64(vec![f64::NAN])]),
-            &nested(vec![MetadataArray::F64(vec![f64::NAN])])
-        ));
-        assert!(!identical(
-            &nested(vec![MetadataArray::U8(vec![])]),
-            &nested(vec![MetadataArray::I8(vec![])])
-        ));
+        assert!(
+            nested(vec![MetadataArray::F64(vec![f64::NAN])])
+                .bitwise_eq(&nested(vec![MetadataArray::F64(vec![f64::NAN])]))
+        );
+        assert!(
+            !nested(vec![MetadataArray::U8(vec![])])
+                .bitwise_eq(&nested(vec![MetadataArray::I8(vec![])]))
+        );
     }
 }

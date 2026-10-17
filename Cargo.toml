@@ -23,7 +23,6 @@ must_use_candidate = "allow"
 # `gguf_inspect::metadata::MetadataValue` reads better than `metadata::Value` at call sites.
 module_name_repetitions = "allow"
 dbg_macro = "warn"
-print_stderr = "warn"
 todo = "warn"
 unwrap_used = "warn"
 
@@ -40,10 +39,27 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = ["cli"]
+# Everything needed by the `gguf-inspect` binary. Library users can opt out with
+# `default-features = false`; the library itself has no dependencies.
+cli = ["dep:clap", "dep:serde", "dep:serde_json", "dep:unicode-width"]
+
+[dependencies]
+clap = { version = "4.6", features = ["derive", "wrap_help"], optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+unicode-width = { version = "0.2", optional = true }
+
 [dev-dependencies]
 gguf-testkit = { path = "testkit" }
 proptest = "1.12"
 tempfile = "3.27"
+
+[[bin]]
+name = "gguf-inspect"
+path = "src/bin/gguf-inspect/main.rs"
+required-features = ["cli"]
 
 [lints]
 workspace = true

@@ -81,7 +81,8 @@ impl fmt::Display for PerLayer {
 pub struct RopeInfo {
     /// `rope.dimension_count`: rotary dimensions per head.
     pub dimension_count: Option<u64>,
-    /// `rope.freq_base`: base frequency.
+    /// `rope.freq_base`: base frequency. `f32` values are converted via their
+    /// shortest decimal form (0.1 stays 0.1).
     pub freq_base: Option<f64>,
     /// `rope.scaling.type`: `none`, `linear`, `yarn`, ...
     pub scaling_type: Option<String>,
@@ -230,8 +231,13 @@ impl<'a> Arch<'a> {
         self.get(key)?.as_u64()
     }
 
+    /// Floats widened through their shortest decimal form, so an `f32`
+    /// 0.1 reads as 0.1 rather than 0.10000000149011612.
     fn f64(&self, key: &str) -> Option<f64> {
-        self.get(key)?.as_f64()
+        match self.get(key)? {
+            MetadataValue::F32(v) => v.to_string().parse().ok(),
+            other => other.as_f64(),
+        }
     }
 
     fn str(&self, key: &str) -> Option<String> {
