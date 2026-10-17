@@ -53,12 +53,17 @@ unicode-width = { version = "0.2", optional = true }
 
 [dev-dependencies]
 gguf-testkit = { path = "testkit" }
+insta = "1.49"
 proptest = "1.12"
 tempfile = "3.27"
 
 [[bin]]
 name = "gguf-inspect"
 path = "src/bin/gguf-inspect/main.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli"
 required-features = ["cli"]
 
 [lints]

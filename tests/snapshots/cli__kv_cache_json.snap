@@ -1,0 +1,22 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"kv-cache\", \"tiny.gguf\", \"--ctx\", \"1000\", \"--json\"])"
+---
+{
+  "file": "tiny.gguf",
+  "architecture": "llama",
+  "context_length": 1000,
+  "batch": 1,
+  "cache_type": "f16",
+  "block_count": 2,
+  "head_count": 4,
+  "head_count_kv": 2,
+  "key_length": 64,
+  "value_length": 64,
+  "head_dim_source": "derived",
+  "k_bytes_per_token": 512,
+  "v_bytes_per_token": 512,
+  "bytes_per_token": 1024,
+  "total_bytes": 1024000,
+  "notes": []
+}

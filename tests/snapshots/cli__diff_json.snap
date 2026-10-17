@@ -1,0 +1,240 @@
+---
+source: tests/cli.rs
+expression: r.stdout
+---
+{
+  "old_file": "tiny.gguf",
+  "new_file": "tiny-q5.gguf",
+  "identical": false,
+  "version": {
+    "old": 3,
+    "new": 2
+  },
+  "alignment": null,
+  "metadata": [
+    {
+      "change": "changed",
+      "key": "general.name",
+      "old": {
+        "type": "string",
+        "value": "Synthetic tiny"
+      },
+      "new": {
+        "type": "string",
+        "value": "Synthetic tiny, requantized"
+      }
+    },
+    {
+      "change": "changed",
+      "key": "llama.context_length",
+      "old": {
+        "type": "u32",
+        "value": 2048
+      },
+      "new": {
+        "type": "u32",
+        "value": 4096
+      }
+    }
+  ],
+  "tensors": [
+    {
+      "change": "changed",
+      "name": "token_embd.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          512
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          512
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.0.attn_q.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          256
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          256
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.0.attn_k.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          128
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          128
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.0.attn_output.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          256
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          256
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.0.ffn_gate.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          512
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          512
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.0.ffn_up.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          512
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          512
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.1.attn_q.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          256
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          256
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.1.attn_k.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          128
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          128
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.1.attn_output.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          256
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          256
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.1.ffn_gate.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          512
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          512
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "name": "blk.1.ffn_up.weight",
+      "old": {
+        "type": "q4_K",
+        "dims": [
+          256,
+          512
+        ]
+      },
+      "new": {
+        "type": "q5_K",
+        "dims": [
+          256,
+          512
+        ]
+      }
+    }
+  ]
+}

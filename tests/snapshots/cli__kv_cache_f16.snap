@@ -1,0 +1,21 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"kv-cache\", \"tiny.gguf\", \"--ctx\", \"2048\"])"
+---
+KV cache estimate for tiny.gguf (llama)
+
+  block_count    2
+  head_count     4
+  head_count_kv  2      grouped-query attention, 2 heads per KV head
+  key_length     64     embedding_length 256 / head_count 4
+  value_length   64     embedding_length 256 / head_count 4
+  cache type     f16    2 bytes per element
+  context        2,048  tokens
+  batch          1      sequence
+
+formula
+  K per layer and token = row_size(f16, 2 x 64 = 128) = 256 B
+  V per layer and token = row_size(f16, 2 x 64 = 128) = 256 B
+  total = batch x ctx x block_count x (K + V)
+        = 1 x 2,048 x 2 x 512 B
+        = 2,097,152 B (2.00 MiB)

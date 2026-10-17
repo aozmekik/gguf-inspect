@@ -1,0 +1,25 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"metadata\", \"every-type.gguf\"])"
+---
+KEY                   TYPE           VALUE
+test.u8               u8             200
+test.i8               i8             -100
+test.u16              u16            60000
+test.i16              i16            -30000
+test.u32              u32            4000000000
+test.i32              i32            -2000000000
+test.f32              f32            0.1
+test.bool             bool           true
+test.string           string         "héllo, wörld"
+test.u64              u64            18446744073709551615
+test.i64              i64            -9223372036854775808
+test.f64              f64            -1.5e300
+test.array.strings    array[string]  ["a", ""]
+test.array.bools      array[bool]    [true, false]
+test.array.empty_f64  array[f64]     []
+test.array.nested     array[array]   [[1, -2], ["x"], [[7]]]
+test.long_string      string         "{% for message in messages %}{% for message in messages %}{% for"... (116 bytes)
+test.long_array       array[u16]     [0, 1, 2, 3, 4, 5, 6, 7, ... 12 more] (20 items)
+
+long arrays and strings are truncated; use --full to show them

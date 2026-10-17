@@ -1,0 +1,28 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"tensors\", \"tiny.gguf\"])"
+---
+NAME                      TYPE  SHAPE       ELEMENTS       BYTES   OFFSET
+token_embd.weight         q4_K  [256, 512]   131,072   72.00 KiB   13,728
+blk.0.attn_norm.weight    f32   [256]            256    1.00 KiB   87,456
+blk.0.attn_q.weight       q4_K  [256, 256]    65,536   36.00 KiB   88,480
+blk.0.attn_k.weight       q4_K  [256, 128]    32,768   18.00 KiB  125,344
+blk.0.attn_v.weight       q8_0  [256, 128]    32,768   34.00 KiB  143,776
+blk.0.attn_output.weight  q4_K  [256, 256]    65,536   36.00 KiB  178,592
+blk.0.ffn_norm.weight     f32   [256]            256    1.00 KiB  215,456
+blk.0.ffn_gate.weight     q4_K  [256, 512]   131,072   72.00 KiB  216,480
+blk.0.ffn_up.weight       q4_K  [256, 512]   131,072   72.00 KiB  290,208
+blk.0.ffn_down.weight     q8_0  [512, 256]   131,072  136.00 KiB  363,936
+blk.1.attn_norm.weight    f32   [256]            256    1.00 KiB  503,200
+blk.1.attn_q.weight       q4_K  [256, 256]    65,536   36.00 KiB  504,224
+blk.1.attn_k.weight       q4_K  [256, 128]    32,768   18.00 KiB  541,088
+blk.1.attn_v.weight       q8_0  [256, 128]    32,768   34.00 KiB  559,520
+blk.1.attn_output.weight  q4_K  [256, 256]    65,536   36.00 KiB  594,336
+blk.1.ffn_norm.weight     f32   [256]            256    1.00 KiB  631,200
+blk.1.ffn_gate.weight     q4_K  [256, 512]   131,072   72.00 KiB  632,224
+blk.1.ffn_up.weight       q4_K  [256, 512]   131,072   72.00 KiB  705,952
+blk.1.ffn_down.weight     q8_0  [512, 256]   131,072  136.00 KiB  779,680
+output_norm.weight        f32   [256]            256    1.00 KiB  918,944
+output.weight             q8_0  [256, 512]   131,072  136.00 KiB  919,968
+
+21 tensors, 1.44 M parameters, 1021.00 KiB of tensor data

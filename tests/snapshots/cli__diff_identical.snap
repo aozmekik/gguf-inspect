@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"diff\", \"tiny.gguf\", \"tiny.gguf\"])"
+---
+--- tiny.gguf
++++ tiny.gguf
+
+headers are identical (metadata and tensor infos)

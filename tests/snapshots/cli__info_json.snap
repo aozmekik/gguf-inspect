@@ -1,0 +1,70 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"info\", \"tiny.gguf\", \"--json\"])"
+---
+{
+  "file": "tiny.gguf",
+  "file_size": 1059232,
+  "gguf_version": 3,
+  "alignment": 32,
+  "header_size": 13712,
+  "data_offset": 13728,
+  "metadata_count": 19,
+  "tensor_count": 21,
+  "parameter_count": 1443072,
+  "tensor_data_size": 1045504,
+  "model": {
+    "architecture": "llama",
+    "name": "Synthetic tiny",
+    "file_type": {
+      "id": 15,
+      "name": "MOSTLY_Q4_K_M"
+    },
+    "quantization_version": 2,
+    "context_length": 2048,
+    "embedding_length": 256,
+    "block_count": 2,
+    "feed_forward_length": 512,
+    "head_count": 4,
+    "head_count_kv": 2,
+    "key_length": null,
+    "value_length": null,
+    "expert_count": null,
+    "expert_used_count": null,
+    "rope": {
+      "dimension_count": 64,
+      "freq_base": 500000.0,
+      "scaling_type": null,
+      "scaling_factor": null,
+      "original_context_length": null
+    },
+    "tokenizer": {
+      "model": "gpt2",
+      "vocab_size": 512
+    }
+  },
+  "quantization": [
+    {
+      "ggml_type": "q4_K",
+      "tensors": 11,
+      "elements": 983040,
+      "bytes": 552960,
+      "bits_per_weight": 4.5
+    },
+    {
+      "ggml_type": "q8_0",
+      "tensors": 5,
+      "elements": 458752,
+      "bytes": 487424,
+      "bits_per_weight": 8.5
+    },
+    {
+      "ggml_type": "f32",
+      "tensors": 5,
+      "elements": 1280,
+      "bytes": 5120,
+      "bits_per_weight": 32.0
+    }
+  ],
+  "warnings": []
+}

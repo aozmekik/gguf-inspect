@@ -1,0 +1,16 @@
+---
+source: tests/cli.rs
+expression: "serde_json::to_string_pretty(&parsed[0]).expect(\"json\")"
+---
+{
+  "absolute_offset": 125344,
+  "bytes": 18432,
+  "dims": [
+    256,
+    128
+  ],
+  "elements": 32768,
+  "name": "blk.0.attn_k.weight",
+  "offset": 111616,
+  "type": "q4_K"
+}

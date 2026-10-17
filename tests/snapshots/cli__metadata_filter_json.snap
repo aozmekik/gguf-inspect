@@ -1,0 +1,72 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"metadata\", \"tiny.gguf\", \"--filter\", \"tokenizer.\", \"--json\"])"
+---
+[
+  {
+    "key": "tokenizer.ggml.model",
+    "type": "string",
+    "value": "gpt2"
+  },
+  {
+    "key": "tokenizer.ggml.tokens",
+    "type": "array",
+    "element_type": "string",
+    "len": 512,
+    "truncated": true,
+    "value": [
+      "tok_0",
+      "tok_1",
+      "tok_2",
+      "tok_3",
+      "tok_4",
+      "tok_5",
+      "tok_6",
+      "tok_7"
+    ]
+  },
+  {
+    "key": "tokenizer.ggml.scores",
+    "type": "array",
+    "element_type": "f32",
+    "len": 512,
+    "truncated": true,
+    "value": [
+      0.0,
+      -1.0,
+      -2.0,
+      -3.0,
+      -4.0,
+      -5.0,
+      -6.0,
+      -7.0
+    ]
+  },
+  {
+    "key": "tokenizer.ggml.token_type",
+    "type": "array",
+    "element_type": "i32",
+    "len": 512,
+    "truncated": true,
+    "value": [
+      3,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "key": "tokenizer.ggml.bos_token_id",
+    "type": "u32",
+    "value": 0
+  },
+  {
+    "key": "tokenizer.ggml.eos_token_id",
+    "type": "u32",
+    "value": 1
+  }
+]

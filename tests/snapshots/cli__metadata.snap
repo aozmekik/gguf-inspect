@@ -1,0 +1,26 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"metadata\", \"tiny.gguf\"])"
+---
+KEY                                     TYPE           VALUE
+general.architecture                    string         "llama"
+general.name                            string         "Synthetic tiny"
+general.file_type                       u32            15
+general.quantization_version            u32            2
+llama.context_length                    u32            2048
+llama.embedding_length                  u32            256
+llama.block_count                       u32            2
+llama.feed_forward_length               u32            512
+llama.attention.head_count              u32            4
+llama.attention.head_count_kv           u32            2
+llama.attention.layer_norm_rms_epsilon  f32            1e-5
+llama.rope.dimension_count              u32            64
+llama.rope.freq_base                    f32            500000.0
+tokenizer.ggml.model                    string         "gpt2"
+tokenizer.ggml.tokens                   array[string]  ["tok_0", "tok_1", "tok_2", "tok_3", "tok_4", "tok_5", "tok_6", "tok_7", ... 504 more] (512 items)
+tokenizer.ggml.scores                   array[f32]     [0.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, ... 504 more] (512 items)
+tokenizer.ggml.token_type               array[i32]     [3, 3, 3, 1, 1, 1, 1, 1, ... 504 more] (512 items)
+tokenizer.ggml.bos_token_id             u32            0
+tokenizer.ggml.eos_token_id             u32            1
+
+long arrays and strings are truncated; use --full to show them

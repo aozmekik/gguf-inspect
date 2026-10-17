@@ -1,0 +1,31 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"info\", \"partial.gguf\"])"
+---
+file      partial.gguf
+size      517.20 KiB (529,616 bytes)
+format    GGUF v3, alignment 32, data offset 13,728
+metadata  19 entries
+tensors   21
+
+architecture    llama
+name            Synthetic tiny
+parameters      1.44 M (1,443,072)
+file type       MOSTLY_Q4_K_M (15)
+context length  2,048
+embedding       256
+layers          2
+feed forward    512
+heads           4
+kv heads        2 (grouped-query attention, 2 heads per KV head)
+rope            dimensions 64, freq base 500000
+tokenizer       gpt2, vocabulary 512
+
+quantization
+  TYPE  TENSORS  PARAMETERS       BYTES  SHARE    BPW
+  q4_K       11    983.04 K  540.00 KiB  52.9%   4.50
+  q8_0        5    458.75 K  476.00 KiB  46.6%   8.50
+  f32         5      1.28 K    5.00 KiB   0.5%  32.00
+
+warnings
+  - 10 tensor(s) starting with `blk.1.attn_q.weight` extend past the end of the file (data ends at byte 1059232, file is 529616 bytes); the file may be truncated
