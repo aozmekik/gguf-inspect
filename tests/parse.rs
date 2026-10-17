@@ -235,3 +235,28 @@ fn per_layer_head_counts_are_exposed() {
     let info = ModelInfo::from_file(&GgufFile::from_bytes(&bytes).unwrap());
     assert_eq!(info.head_count_kv.unwrap().range(), (0, 8));
 }
+
+#[test]
+fn parsed_files_can_be_shared_across_threads() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<GgufFile>();
+    assert_send_sync::<gguf_inspect::Error>();
+
+    let bytes = SyntheticModel::tiny().builder().build();
+    let shared = GgufFile::from_bytes(&bytes).unwrap();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    let own = GgufFile::from_bytes(&bytes).unwrap();
+                    assert_eq!(own.metadata(), shared.metadata());
+                    assert_eq!(own.tensors(), shared.tensors());
+                    shared.parameter_count()
+                })
+            })
+            .collect();
+        for handle in handles {
+            assert_eq!(handle.join().unwrap(), shared.parameter_count());
+        }
+    });
+}

@@ -486,6 +486,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn in_memory_sizes_stay_small() {
+        // Each array element costs at most this many bytes of `Vec` storage,
+        // which bounds memory use relative to the bytes read from the file.
+        assert!(std::mem::size_of::<MetadataArray>() <= 32);
+        assert!(std::mem::size_of::<MetadataValue>() <= 32);
+        assert_eq!(
+            std::mem::size_of::<String>(),
+            3 * std::mem::size_of::<usize>()
+        );
+    }
+
+    #[test]
     fn value_type_ids_round_trip() {
         for t in ValueType::ALL {
             assert_eq!(ValueType::from_id(t.id()), Some(t));

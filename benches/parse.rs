@@ -19,8 +19,14 @@ fn vocab_header(entries: usize) -> Vec<u8> {
     #[allow(clippy::cast_precision_loss)]
     let scores: Vec<f32> = (0..entries).map(|i| 0.0 - i as f32).collect();
     GgufBuilder::new()
-        .kv("general.architecture", &MetadataValue::String("llama".into()))
-        .kv("tokenizer.ggml.model", &MetadataValue::String("gpt2".into()))
+        .kv(
+            "general.architecture",
+            &MetadataValue::String("llama".into()),
+        )
+        .kv(
+            "tokenizer.ggml.model",
+            &MetadataValue::String("gpt2".into()),
+        )
         .kv(
             "tokenizer.ggml.tokens",
             &MetadataValue::Array(MetadataArray::String(tokens)),
