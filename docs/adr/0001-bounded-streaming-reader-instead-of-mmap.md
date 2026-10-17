@@ -54,8 +54,9 @@ implausible-but-consistent files on top.
 - `GgufFile` owns its data, is `Send + Sync`, and has no lifetime parameter.
 - Every vocabulary token is a separate `String` allocation. Measured on the
   development machine, a header with a 150,000-entry vocabulary parses in
-  about 6 ms (see the README for the exact command and conditions), which is
-  well below process start-up and terminal output for a CLI.
+  about 6 ms (see the README for the exact command and conditions); the whole
+  `gguf-inspect info` run on an 8B-shaped header takes about 9 ms, of which
+  about 2.5 ms is process start-up.
 - Memory use is proportional to the header size, never to declared lengths.
 - Reading tensor *data* is out of scope. If it is ever added, mmap or
   positioned reads would be reconsidered for that part only.

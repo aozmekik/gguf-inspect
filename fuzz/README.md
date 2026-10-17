@@ -43,6 +43,7 @@ RUSTFLAGS="-Cpasses=sancov-module \
 ./target/*/release/parse corpus/parse -max_len=16384 -max_total_time=300
 ```
 
-Result of that run on 2026-10-18 (Apple M1 Pro, 16 GB, Rust 1.99.1, seeded
-with the two files above, machine shared with other build jobs):
-3,925,632 executions in 301 s, no crashes, peak RSS 29 MB.
+Result of that run on 2026-10-18 at commit `4003852` (Apple M1 Pro, 16 GB,
+Rust 1.99.1, seeded with the two files above, machine shared with other build
+jobs): 13,510,653 executions in 301 s, no crashes, peak RSS 32 MB. An earlier
+300 s run on commit `fd28152` executed 3,925,632 inputs, also without crashes.

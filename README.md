@@ -26,7 +26,7 @@ tables or JSON.
   error. All 13 metadata value types, including nested arrays; tensor infos
   (name, shape, ggml type, offset); `general.alignment`; the data section offset.
 - **Header only**: a 256 KiB buffered reader stops at the end of the tensor
-  infos. On a 4.82 GiB synthetic model the CLI peaks at 8.4 MiB resident
+  infos. On a 4.82 GiB synthetic model the CLI peaks at 9.3 MiB resident
   memory and finishes in about 9 ms ([benchmarks](#benchmarks)).
 - **Untrusted input**: every declared length and count is checked against
   configurable `Limits` and against the bytes left in the file before
@@ -205,8 +205,9 @@ flowchart LR
   behaviour; only the header is needed, so a buffered reader costs little and
   keeps the crate free of `unsafe`. Declared counts are checked against
   `remaining bytes / smallest possible element size` (1 byte for a `u8`, 8 for
-  a string's length prefix, 12 for a nested array), so capacity is never taken
-  from the file on trust.
+  a string's length prefix, 12 for a nested array), and vectors of
+  variable-size elements reserve at most 65,536 slots before growing as
+  elements are parsed, so capacity is never taken from the file on trust.
 - **Errors for the header, issues for the data section**
   ([ADR 0002](docs/adr/0002-header-errors-versus-data-section-issues.md)).
   Anything that makes the header unreadable or ambiguous is an error with a
@@ -224,7 +225,7 @@ flowchart LR
 
 ## Testing
 
-114 tests pass with `cargo test --workspace` (Rust 1.99.1, Apple M1 Pro):
+115 tests pass with `cargo test --workspace` (Rust 1.99.1, Apple M1 Pro):
 
 - A test-only writer ([`testkit/`](testkit), not published) generates synthetic
   files: every metadata type, versions 2 and 3, alignments from 1 to 4096,
@@ -238,10 +239,14 @@ flowchart LR
   type tags, bools and UTF-8, duplicate keys and tensor names, bad alignments,
   unknown and removed ggml types, overflowing shapes, 10,000 levels of nested
   arrays. Tests assert the error kind and its byte offset.
+- Peak heap, measured with dhat's counting allocator (`tests/memory.rs`):
+  a 12 MiB file declaring seven levels of million-element nested arrays peaks
+  below 16 MiB (about 235 MB before reservations were capped), and parsing the
+  3.24 MB header of the 8B-shaped synthetic model peaks at 5.4 MB.
 - CLI snapshot tests (insta) of every subcommand, text and JSON.
 - Fuzzing: a [cargo-fuzz target](fuzz/README.md). It ran for 300 s on stable
-  Rust without a sanitizer (no nightly toolchain was available): 3,925,632
-  executions, no crashes, peak RSS 29 MB.
+  Rust without a sanitizer (no nightly toolchain was available), with overflow
+  checks on: 13,510,653 executions, no crashes, peak RSS 32 MB.
 - Line coverage 96.0% (region coverage 93.6%) of `src/`, measured with
   `LLVM_BIN=/opt/homebrew/opt/llvm/bin scripts/coverage.sh` (LLVM 23.1.3
   source-based coverage; tests, testkit, examples and benches are excluded
@@ -259,8 +264,8 @@ a05c9922613c6a2230dbb1d0de679519ecafb4f0`).
 Hardware and toolchain: Apple M1 Pro (8 cores), 16 GB RAM, macOS 26, Rust
 1.99.1 (Homebrew), release profile with thin LTO. Inputs are synthetic (see
 `benches/parse.rs` and `examples/synth.rs`). The machine was shared with other
-build jobs during measurement: load averages were around 27 on 8 cores for the
-numbers below, and three criterion runs at load averages between about 27 and
+build jobs during measurement: load averages were 30-33 on 8 cores for the
+numbers below, and four criterion runs at load averages between about 27 and
 57 differed by up to 3.7x (slowest at the highest load). Treat the numbers as
 indicative.
 
@@ -269,9 +274,9 @@ confidence interval of the mean):
 
 | Input | Header bytes | Time | Throughput |
 |---|---:|---:|---:|
-| 150,000-entry vocab + scores + token types, from memory | 3.8 MB | 8.59 ms [7.87, 9.33] | 421 MiB/s |
-| 8B Llama-3-shaped header (128,256-entry vocab, 291 tensors), from memory | 3.24 MB | 4.30 ms [4.27, 4.33] | 719 MiB/s |
-| same, `GgufFile::open` on a file (page cache warm) | 3.24 MB | 5.70 ms [5.53, 5.91] | 542 MiB/s |
+| 150,000-entry vocab + scores + token types, from memory | 3.79 MB | 6.02 ms [5.94, 6.11] | 601 MiB/s |
+| 8B Llama-3-shaped header (128,256-entry vocab, 291 tensors), from memory | 3.24 MB | 4.55 ms [4.40, 4.75] | 679 MiB/s |
+| same, `GgufFile::open` on a file (page cache warm) | 3.24 MB | 5.32 ms [5.29, 5.35] | 582 MiB/s |
 
 End to end, `hyperfine --warmup 5 --runs 50 -N` (hyperfine 2.0.0) on the
 sparse 8B-shaped file written by `cargo run --release --example synth --
@@ -280,14 +285,16 @@ on disk):
 
 | Command | Wall time (mean ± σ) | Peak resident memory |
 |---|---:|---:|
-| `gguf-inspect info llama3-8b-shape.gguf` | 9.1 ms ± 1.2 ms | 8.4 MiB |
-| `gguf-inspect tensors llama3-8b-shape.gguf` | 9.4 ms ± 0.8 ms | 8.6 MiB |
-| `gguf-inspect metadata llama3-8b-shape.gguf --json` | 9.0 ms ± 0.6 ms | 8.5 MiB |
-| `gguf-inspect kv-cache llama3-8b-shape.gguf --ctx 8192` | 9.0 ms ± 0.6 ms | 8.4 MiB |
-| `gguf-inspect types` (no file, process start-up baseline) | 2.7 ms ± 0.9 ms | 2.0 MiB |
+| `gguf-inspect info llama3-8b-shape.gguf` | 8.7 ms ± 0.2 ms | 9.3 MiB |
+| `gguf-inspect tensors llama3-8b-shape.gguf` | 11.2 ms ± 3.4 ms | 9.5 MiB |
+| `gguf-inspect metadata llama3-8b-shape.gguf --json` | 9.0 ms ± 0.5 ms | 9.3 MiB |
+| `gguf-inspect kv-cache llama3-8b-shape.gguf --ctx 8192` | 8.9 ms ± 0.2 ms | 9.4 MiB |
+| `gguf-inspect types` (no file, process start-up baseline) | 2.5 ms ± 0.2 ms | 2.0 MiB |
 
-Cost depends on the header, not the file: the 4.82 GiB file is handled in the
-same few milliseconds a 1 MiB file with the same header would take.
+Cost depends on the header, not the file size: in a separate hyperfine run
+(load average 29), `gguf-inspect tensors` took 13.3 ms ± 2.8 ms on the
+4.82 GiB file and 12.9 ms ± 2.2 ms on a 3.24 MB copy holding only its header
+(`head -c 3241696`).
 
 ## Limitations
 
@@ -337,7 +344,8 @@ commands. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
   big-endian layout against llama.cpp's `gguf-py/gguf/gguf_writer.py`. No code
   was copied from either.
 - Tools: [proptest](https://github.com/proptest-rs/proptest),
-  [insta](https://insta.rs), [criterion](https://github.com/bheisler/criterion.rs),
+  [insta](https://insta.rs), [dhat](https://github.com/nnethercote/dhat-rs),
+  [criterion](https://github.com/bheisler/criterion.rs),
   [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) / libFuzzer,
   [hyperfine](https://github.com/sharkdp/hyperfine).
 
