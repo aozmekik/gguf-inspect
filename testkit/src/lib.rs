@@ -222,8 +222,9 @@ impl GgufBuilder {
     }
 
     /// Writes the header to `path` and extends the file to its full size
-    /// without writing tensor data, which yields a sparse file on file systems
-    /// that support them (APFS, ext4, NTFS).
+    /// without writing tensor data. On APFS and ext4 the result is a sparse
+    /// file that takes almost no disk space; NTFS reserves the space but does
+    /// not write it.
     ///
     /// # Errors
     ///

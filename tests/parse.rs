@@ -174,11 +174,11 @@ fn reads_from_disk_and_stops_at_the_header() {
             "general.architecture",
             &MetadataValue::String("llama".into()),
         )
-        .tensor("big", &[1 << 20, 1 << 10], GgmlType::F16); // 2 GiB of (sparse) data
+        .tensor("big", &[1 << 18, 1 << 10], GgmlType::F16); // 512 MiB, never written
     let layout = builder.write_sparse(&path).unwrap();
     let gguf = GgufFile::open(&path).unwrap();
     assert_eq!(gguf.file_size(), layout.file_size);
-    assert_eq!(gguf.file_size(), layout.data_offset + (2 << 30));
+    assert_eq!(gguf.file_size(), layout.data_offset + (512 << 20));
     assert_eq!(gguf.validate(), []);
 }
 
