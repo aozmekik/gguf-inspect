@@ -1,0 +1,16 @@
+[package]
+name = "gguf-testkit"
+version = "0.0.0"
+description = "Test-only writer for synthetic GGUF files (not published)"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+gguf-inspect = { path = "..", default-features = false }
+
+[lints]
+workspace = true
