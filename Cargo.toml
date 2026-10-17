@@ -52,6 +52,7 @@ serde_json = { version = "1.0", optional = true }
 unicode-width = { version = "0.2", optional = true }
 
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 gguf-testkit = { path = "testkit" }
 insta = "1.49"
 proptest = "1.12"
@@ -65,6 +66,10 @@ required-features = ["cli"]
 [[test]]
 name = "cli"
 required-features = ["cli"]
+
+[[bench]]
+name = "parse"
+harness = false
 
 [lints]
 workspace = true
