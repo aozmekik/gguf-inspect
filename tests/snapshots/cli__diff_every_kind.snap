@@ -1,0 +1,20 @@
+---
+source: tests/cli.rs
+expression: r.stdout
+---
+--- every-type.gguf
++++ every-type-edited.gguf
+
+header
+  alignment  32 -> 64
+
+metadata: 6 difference(s)
+  -  test.i8             i8             -100
+  ~  test.u16            u16 -> u32     60000 -> 60000
+  ~  test.array.strings  array[string]  length 2 -> 3 (shared elements identical)
+  ~  test.long_array     array[u16]     first difference at index 13: 13 -> 1300
+  +  general.alignment   u32            64
+  +  test.added          bool           false
+
+tensors: 1 difference(s)
+  +  added.weight  f32 [32]

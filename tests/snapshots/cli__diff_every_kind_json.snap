@@ -1,0 +1,121 @@
+---
+source: tests/cli.rs
+expression: r.stdout
+---
+{
+  "old_file": "every-type-edited.gguf",
+  "new_file": "every-type.gguf",
+  "identical": false,
+  "version": null,
+  "alignment": {
+    "old": 64,
+    "new": 32
+  },
+  "metadata": [
+    {
+      "change": "removed",
+      "key": "general.alignment",
+      "old": {
+        "type": "u32",
+        "value": 64
+      }
+    },
+    {
+      "change": "changed",
+      "key": "test.u16",
+      "old": {
+        "type": "u32",
+        "value": 60000
+      },
+      "new": {
+        "type": "u16",
+        "value": 60000
+      }
+    },
+    {
+      "change": "changed",
+      "key": "test.array.strings",
+      "old": {
+        "type": "array",
+        "element_type": "string",
+        "len": 3,
+        "value": [
+          "a",
+          "",
+          "c"
+        ]
+      },
+      "new": {
+        "type": "array",
+        "element_type": "string",
+        "len": 2,
+        "value": [
+          "a",
+          ""
+        ]
+      }
+    },
+    {
+      "change": "changed",
+      "key": "test.long_array",
+      "old": {
+        "type": "array",
+        "element_type": "u16",
+        "len": 20,
+        "value": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      "new": {
+        "type": "array",
+        "element_type": "u16",
+        "len": 20,
+        "value": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      }
+    },
+    {
+      "change": "removed",
+      "key": "test.added",
+      "old": {
+        "type": "bool",
+        "value": false
+      }
+    },
+    {
+      "change": "added",
+      "key": "test.i8",
+      "new": {
+        "type": "i8",
+        "value": -100
+      }
+    }
+  ],
+  "tensors": [
+    {
+      "change": "removed",
+      "name": "added.weight",
+      "old": {
+        "type": "f32",
+        "dims": [
+          32
+        ]
+      }
+    }
+  ]
+}

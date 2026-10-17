@@ -66,6 +66,36 @@ fn fixtures() -> tempfile::TempDir {
         );
     write("every-type.gguf", every.build());
 
+    // Every kind of change the diff can report, against every-type.gguf.
+    let mut changed_array: Vec<u16> = (0..20).collect();
+    changed_array[13] = 1300;
+    let edited = every_value_type()
+        .iter()
+        .filter(|(k, _)| *k != "test.i8")
+        .fold(GgufBuilder::new().alignment(64), |b, (k, v)| match *k {
+            "test.u16" => b.kv(k, &MetadataValue::U32(60_000)),
+            "test.array.strings" => b.kv(
+                k,
+                &MetadataValue::Array(MetadataArray::String(vec![
+                    "a".into(),
+                    String::new(),
+                    "c".into(),
+                ])),
+            ),
+            _ => b.kv(k, v),
+        })
+        .kv(
+            "test.long_string",
+            &MetadataValue::String("{% for message in messages %}".repeat(4)),
+        )
+        .kv(
+            "test.long_array",
+            &MetadataValue::Array(MetadataArray::U16(changed_array)),
+        )
+        .kv("test.added", &MetadataValue::Bool(false))
+        .tensor("added.weight", &[32], GgmlType::F32);
+    write("every-type-edited.gguf", edited.build());
+
     let hybrid = GgufBuilder::new()
         .kv(
             "general.architecture",
@@ -270,6 +300,24 @@ fn diff() {
         "diff_identical",
         ok(dir.path(), &["diff", "tiny.gguf", "tiny.gguf"])
     );
+
+    let r = run(
+        dir.path(),
+        &["diff", "every-type.gguf", "every-type-edited.gguf"],
+    );
+    assert_eq!(r.code, 1);
+    assert_snapshot!("diff_every_kind", r.stdout);
+    let r = run(
+        dir.path(),
+        &[
+            "diff",
+            "every-type-edited.gguf",
+            "every-type.gguf",
+            "--json",
+        ],
+    );
+    assert_eq!(r.code, 1);
+    assert_snapshot!("diff_every_kind_json", r.stdout);
 }
 
 #[test]
