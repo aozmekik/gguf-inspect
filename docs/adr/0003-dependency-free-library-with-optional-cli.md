@@ -9,8 +9,8 @@ The project is both a library (to embed in model servers, download managers
 and tooling) and a CLI. The CLI needs argument parsing (clap) and JSON output
 (serde, serde_json). Library users who parse untrusted files care about
 auditability and compile times, and should not have to take those
-dependencies. At the same time, `cargo install --git <url>` should install
-the CLI without extra flags.
+dependencies. At the same time, `cargo install --git <url> gguf-inspect`
+should install the CLI without feature flags.
 
 ## Options considered
 
@@ -18,7 +18,7 @@ the CLI without extra flags.
    every library user compiles clap and serde.
 2. **Two packages in one workspace** (a `gguf-inspect` library and a separate
    CLI package). Clean separation, but two crate names to publish and
-   version, and `cargo install --git` needs the package name spelled out.
+   version, and a third crate name to explain.
 3. **One package with a `cli` feature that is on by default.** The binary
    target declares `required-features = ["cli"]`; clap, serde, serde_json and
    unicode-width are optional dependencies enabled by that feature.
@@ -32,8 +32,10 @@ the library's public types do not commit to a serialization format.
 
 ## Consequences
 
-- `cargo install --git https://github.com/aozmekik/gguf-inspect` installs the
-  CLI; the library alone builds with no third-party code.
+- `cargo install --git https://github.com/aozmekik/gguf-inspect gguf-inspect`
+  installs the CLI (the package name is needed only because the fuzzing
+  crate in `fuzz/` also has binaries); the library alone builds with no
+  third-party code.
 - CI runs clippy and the unit tests with `--no-default-features` to keep the
   library honest.
 - Library users who want JSON write their own `Serialize` wrappers. An

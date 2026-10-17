@@ -50,8 +50,11 @@ Not yet published to crates.io. Minimum supported Rust version: 1.88
 1.99.1).
 
 ```sh
-cargo install --git https://github.com/aozmekik/gguf-inspect
+cargo install --git https://github.com/aozmekik/gguf-inspect gguf-inspect
 ```
+
+The trailing package name is needed because the repository also contains the
+fuzzing crate, which has binaries of its own.
 
 As a library, without the CLI dependencies:
 
