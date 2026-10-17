@@ -1,0 +1,28 @@
+[package]
+name = "gguf-inspect-fuzz"
+version = "0.0.0"
+description = "cargo-fuzz targets for gguf-inspect (not published)"
+publish = false
+edition = "2024"
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+gguf-inspect = { path = "..", default-features = false }
+libfuzzer-sys = "0.4"
+
+# Not part of the main workspace: fuzzing needs its own build flags.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1
