@@ -497,6 +497,54 @@ mod tests {
         );
     }
 
+    fn one_of_each_array() -> Vec<MetadataArray> {
+        vec![
+            MetadataArray::U8(vec![1]),
+            MetadataArray::I8(vec![-1]),
+            MetadataArray::U16(vec![1]),
+            MetadataArray::I16(vec![-1]),
+            MetadataArray::U32(vec![1]),
+            MetadataArray::I32(vec![-1]),
+            MetadataArray::F32(vec![0.5]),
+            MetadataArray::Bool(vec![true]),
+            MetadataArray::String(vec!["s".into()]),
+            MetadataArray::Array(vec![MetadataArray::U8(vec![])]),
+            MetadataArray::U64(vec![1]),
+            MetadataArray::I64(vec![-1]),
+            MetadataArray::F64(vec![0.5]),
+        ]
+    }
+
+    #[test]
+    fn element_types_and_values_agree_for_every_variant() {
+        let arrays = one_of_each_array();
+        let types: Vec<ValueType> = arrays.iter().map(MetadataArray::element_type).collect();
+        assert_eq!(types, ValueType::ALL);
+        for array in &arrays {
+            let first = array.get(0).unwrap();
+            assert_eq!(first.value_type(), array.element_type());
+            assert_eq!(array.get(1), None);
+            assert!(array.bitwise_eq(array));
+            let value = MetadataValue::Array(array.clone());
+            assert_eq!(value.value_type(), ValueType::Array);
+            assert_eq!(value.as_array(), Some(array));
+            assert_eq!(value.as_str(), None);
+            assert_eq!(value.as_bool(), None);
+            assert_eq!(value.as_u64(), None);
+        }
+        assert_eq!(
+            arrays[8].as_strings().map(<[String]>::len),
+            Some(1),
+            "string array"
+        );
+        assert_eq!(arrays[0].as_strings(), None);
+        let names: Vec<&str> = ValueType::ALL.iter().map(|t| t.name()).collect();
+        assert_eq!(
+            names.join(" "),
+            "u8 i8 u16 i16 u32 i32 f32 bool string array u64 i64 f64"
+        );
+    }
+
     #[test]
     fn value_type_ids_round_trip() {
         for t in ValueType::ALL {

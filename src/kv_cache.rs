@@ -374,3 +374,70 @@ fn notes(arch: &Arch<'_>, prefix: &str, empty_layers: usize) -> Vec<KvCacheNote>
     }
     notes
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn messages() {
+        let notes = [
+            (
+                KvCacheNote::SlidingWindow(4096),
+                "sliding-window attention (window 4096)",
+            ),
+            (
+                KvCacheNote::LatentAttention(512),
+                "multi-head latent attention (kv_lora_rank 512)",
+            ),
+            (
+                KvCacheNote::RecurrentState,
+                "recurrent (SSM) state is not included",
+            ),
+            (
+                KvCacheNote::LayersWithoutKv(2),
+                "2 layer(s) have no KV heads",
+            ),
+        ];
+        for (note, prefix) in notes {
+            assert!(note.to_string().starts_with(prefix), "{note}");
+        }
+        let errors = [
+            (
+                KvCacheError::MissingKey("llama.block_count".into()),
+                "required key `llama.block_count` is missing or not an integer",
+            ),
+            (KvCacheError::ZeroHeads, "attention.head_count is zero"),
+            (
+                KvCacheError::LayerCountMismatch {
+                    key: "x.attention.head_count_kv".into(),
+                    expected: 32,
+                    found: 2,
+                },
+                "`x.attention.head_count_kv` has 2 entries but block_count is 32",
+            ),
+            (
+                KvCacheError::PartialBlock {
+                    cache_type: GgmlType::Q8_0,
+                    row_elements: 40,
+                },
+                "a row of 40 elements is not a multiple of the q8_0 block size 32",
+            ),
+            (KvCacheError::Overflow, "the cache size overflows u64"),
+        ];
+        for (err, expected) in errors {
+            assert_eq!(err.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn config_builders() {
+        let config = KvCacheConfig::new(10)
+            .with_cache_type(GgmlType::Q4_0)
+            .with_sequences(3);
+        assert_eq!(
+            (config.context_length, config.cache_type, config.sequences),
+            (10, GgmlType::Q4_0, 3)
+        );
+    }
+}

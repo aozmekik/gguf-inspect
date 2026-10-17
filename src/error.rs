@@ -274,6 +274,101 @@ mod tests {
     }
 
     #[test]
+    fn every_kind_has_a_message() {
+        let cases: Vec<(ErrorKind, &str)> = vec![
+            (
+                ErrorKind::UnexpectedEof {
+                    needed: 8,
+                    available: 3,
+                },
+                "unexpected end of file: needed 8 bytes but only 3 remain",
+            ),
+            (
+                ErrorKind::BadMagic(*b"\0\x01ab"),
+                r#"not a GGUF file: expected magic "GGUF", found "\x00\x01ab""#,
+            ),
+            (
+                ErrorKind::BigEndian { version: 3 },
+                "big-endian GGUF files are not supported (the version field reads as version 3 \
+                 only when byte-swapped)",
+            ),
+            (
+                ErrorKind::UnsupportedVersion(1),
+                "GGUF version 1 is not supported; it used 32-bit lengths (supported: 2, 3)",
+            ),
+            (
+                ErrorKind::UnsupportedVersion(9),
+                "unsupported GGUF version 9 (supported: 2, 3)",
+            ),
+            (
+                ErrorKind::InvalidValueType(13),
+                "invalid metadata value type 13",
+            ),
+            (ErrorKind::InvalidUtf8, "string is not valid UTF-8"),
+            (
+                ErrorKind::LengthExceedsFile {
+                    what: "array length",
+                    declared: 10,
+                    min_bytes: 80,
+                    available: 5,
+                },
+                "array length 10 needs at least 80 bytes but only 5 remain",
+            ),
+            (
+                ErrorKind::LimitExceeded {
+                    what: "tensor count",
+                    value: 9,
+                    limit: 8,
+                },
+                "tensor count 9 exceeds the limit of 8",
+            ),
+            (
+                ErrorKind::NestingTooDeep { limit: 8 },
+                "arrays are nested more than 8 levels deep",
+            ),
+            (ErrorKind::EmptyKey, "metadata key is empty"),
+            (
+                ErrorKind::DuplicateKey("a".into()),
+                "duplicate metadata key `a`",
+            ),
+            (
+                ErrorKind::DuplicateTensorName("t".into()),
+                "duplicate tensor name `t`",
+            ),
+            (
+                ErrorKind::TooManyDimensions { n_dims: 5, max: 4 },
+                "tensor has 5 dimensions (at most 4 allowed)",
+            ),
+            (
+                ErrorKind::TensorShapeOverflow(vec![1, 2]),
+                "tensor shape [1, 2] has more than i64::MAX elements",
+            ),
+            (
+                ErrorKind::PartialBlock {
+                    ggml_type: GgmlType::Q4_K,
+                    ne0: 100,
+                },
+                "first dimension 100 is not a multiple of the q4_K block size 256",
+            ),
+            (
+                ErrorKind::AlignmentType(ValueType::U64),
+                "general.alignment must be a u32, found u64",
+            ),
+            (
+                ErrorKind::InvalidAlignment(48),
+                "general.alignment 48 is not a power of two",
+            ),
+            (
+                ErrorKind::OffsetOverflow,
+                "tensor data offset overflows u64",
+            ),
+        ];
+        for (kind, expected) in cases {
+            assert_eq!(kind.to_string(), expected);
+        }
+    }
+
+    #[test]
     fn removed_types_are_named_as_such() {
         assert_eq!(
             ErrorKind::UnknownGgmlType(31).to_string(),
