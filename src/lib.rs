@@ -72,3 +72,8 @@ pub use limits::Limits;
 pub use metadata::{Metadata, MetadataArray, MetadataValue, ValueType};
 pub use model::ModelInfo;
 pub use tensor::TensorInfo;
+
+// Compile the Rust examples in README.md as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
