@@ -31,6 +31,12 @@ const MIN_KV_BYTES: u64 = 8 + 4 + 1;
 /// Smallest possible tensor info: name length, `n_dims`, type, offset.
 const MIN_TENSOR_INFO_BYTES: u64 = 8 + 4 + 4 + 8;
 
+/// Most slots reserved up front for vectors of variable-size elements
+/// (strings, nested arrays, tensor infos). Larger vectors grow as elements
+/// are actually parsed, so memory follows the bytes consumed rather than a
+/// count declared in the file.
+const MAX_PREALLOCATED: usize = 1 << 16;
+
 /// Read buffer for [`GgufFile::open`]. Headers of real models are a few
 /// megabytes at most, mostly the tokenizer vocabulary.
 const READ_BUFFER_BYTES: usize = 256 * 1024;
@@ -434,9 +440,10 @@ impl<R: Read> Parser<'_, R> {
             MIN_TENSOR_INFO_BYTES,
             tensor_count_at,
         )?;
-        let mut tensors = Vec::with_capacity(n_tensors);
-        let mut offset_fields = Vec::with_capacity(n_tensors);
-        let mut tensor_index = HashMap::with_capacity(n_tensors);
+        let reserve = n_tensors.min(MAX_PREALLOCATED);
+        let mut tensors = Vec::with_capacity(reserve);
+        let mut offset_fields = Vec::with_capacity(reserve);
+        let mut tensor_index = HashMap::with_capacity(reserve);
         for i in 0..n_tensors {
             let (tensor, offset_at) = self.tensor_info(i, &tensor_index)?;
             tensor_index.insert(tensor.name().to_owned(), i);
@@ -563,14 +570,14 @@ impl<R: Read> Parser<'_, R> {
             ValueType::F64 => MetadataArray::F64(r.fixed_vec(n, f64::from_le_bytes)?),
             ValueType::Bool => MetadataArray::Bool(r.bool_vec(n)?),
             ValueType::String => {
-                let mut items = Vec::with_capacity(n);
+                let mut items = Vec::with_capacity(n.min(MAX_PREALLOCATED));
                 for _ in 0..n {
                     items.push(r.string("string length", self.limits.max_string_len)?);
                 }
                 MetadataArray::String(items)
             }
             ValueType::Array => {
-                let mut items = Vec::with_capacity(n);
+                let mut items = Vec::with_capacity(n.min(MAX_PREALLOCATED));
                 for _ in 0..n {
                     items.push(self.array(depth + 1)?);
                 }

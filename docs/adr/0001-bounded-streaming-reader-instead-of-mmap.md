@@ -38,11 +38,15 @@ its length from `metadata()`; `GgufFile::from_reader` accepts any `Read` plus a
 length, and `GgufFile::from_bytes` parses a slice. The crate is
 `#![forbid(unsafe_code)]` (via the workspace lint table).
 
-Declared counts are checked against the remaining bytes multiplied by the
+Declared counts are checked against the remaining bytes divided by the
 smallest possible encoding of one element (1 byte for a `u8`, 8 for a string's
-length prefix, 12 for a nested array's type tag and length), so a capacity
-derived from a declared count never exceeds what the file can actually hold.
-Configurable caps (`Limits`) bound implausible-but-consistent files on top.
+length prefix, 12 for a nested array's type tag and length), so a count can
+never exceed what the file could actually hold. Fixed-width arrays are then
+read in full, so their allocation matches bytes that exist. Vectors of
+variable-size elements (strings, nested arrays, tensor infos) reserve at most
+65,536 slots up front and grow as elements are parsed, so nesting cannot
+multiply reservations. Configurable caps (`Limits`) bound
+implausible-but-consistent files on top.
 
 ## Consequences
 
