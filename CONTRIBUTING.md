@@ -77,7 +77,7 @@ cargo +nightly fuzz run parse
 When ggml adds or changes a tensor type, update `src/ggml_type.rs` and run:
 
 ```sh
-scripts/check-ggml-type-sizes.sh <ggml-commit>   # needs curl and a C compiler
+scripts/check-ggml-type-table.sh <ggml-commit>   # needs curl and a C compiler
 ```
 
 ## Commits

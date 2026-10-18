@@ -38,3 +38,5 @@ ID  NAME     BLOCK  BYTES      BPW  QUANTIZED
 40  nvfp4       64     36   4.5000  yes
 41  q1_0       128     18   1.1250  yes
 42  q2_0        64     18   2.2500  yes
+
+removed ids: 4, 5, 31, 32, 33, 36, 37, 38

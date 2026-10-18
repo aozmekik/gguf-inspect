@@ -4,8 +4,10 @@
 //! block byte sizes follow the `type_traits` table in `src/ggml.c` together with
 //! the block structs in `src/ggml-common.h`. All three were checked against
 //! [ggml commit `a05c992`](https://github.com/ggml-org/ggml/tree/a05c9922613c6a2230dbb1d0de679519ecafb4f0)
-//! (2026-10-15); `scripts/check-ggml-type-sizes.sh` repeats the check by
-//! compiling the ggml header and comparing `sizeof` of every block struct.
+//! (2026-10-15); `scripts/check-ggml-type-table.sh` repeats the check in CI
+//! by compiling ggml's own `type_traits` table against its headers and
+//! comparing every ID, name, block size, block byte size, quantized flag and
+//! removed ID with `gguf-inspect types`.
 
 use std::fmt;
 use std::str::FromStr;
@@ -149,10 +151,11 @@ ggml_types! {
     Q2_0 = 42 => quant("q2_0", 64, 18),
 }
 
-/// Type IDs that existed in ggml but whose support has been removed.
-const REMOVED_IDS: [u32; 8] = [4, 5, 31, 32, 33, 36, 37, 38];
-
 impl GgmlType {
+    /// Type IDs that existed in ggml but whose support has been removed.
+    /// Files using them are rejected like unknown IDs, with their own message.
+    pub const REMOVED_IDS: &'static [u32] = &[4, 5, 31, 32, 33, 36, 37, 38];
+
     /// The numeric ID stored in GGUF files.
     pub const fn id(self) -> u32 {
         self as u32
@@ -204,7 +207,7 @@ impl GgmlType {
 
     /// Whether `id` names a type ggml used to have but removed.
     pub(crate) fn is_removed_id(id: u32) -> bool {
-        REMOVED_IDS.contains(&id)
+        Self::REMOVED_IDS.contains(&id)
     }
 }
 
@@ -256,7 +259,7 @@ mod tests {
 
     #[test]
     fn removed_and_unknown_ids_are_rejected() {
-        for id in REMOVED_IDS {
+        for &id in GgmlType::REMOVED_IDS {
             assert_eq!(GgmlType::from_id(id), None);
             assert!(GgmlType::is_removed_id(id));
         }
@@ -275,7 +278,7 @@ mod tests {
 
     #[test]
     fn layout_matches_ggml_reference_values() {
-        // Spot checks against values printed by scripts/check-ggml-type-sizes.sh.
+        // Spot checks against values printed by scripts/check-ggml-type-table.sh.
         let expect = [
             (GgmlType::F32, 1, 4),
             (GgmlType::BF16, 1, 2),

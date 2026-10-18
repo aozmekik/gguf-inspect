@@ -94,5 +94,5 @@ jobs:
         run: cargo check --manifest-path fuzz/Cargo.toml --locked
       - name: Benchmarks compile
         run: cargo bench --no-run --locked
-      - name: Type table matches ggml's block structs
-        run: ./scripts/check-ggml-type-sizes.sh
+      - name: Type table matches ggml (IDs, names, sizes)
+        run: ./scripts/check-ggml-type-table.sh

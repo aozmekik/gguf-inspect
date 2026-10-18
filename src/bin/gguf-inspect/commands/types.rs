@@ -48,5 +48,8 @@ pub(crate) fn types(json: bool, out: &mut dyn Write) -> Result<Outcome, Failure>
         ]);
     }
     table.render(out)?;
+    let removed: Vec<String> = GgmlType::REMOVED_IDS.iter().map(u32::to_string).collect();
+    writeln!(out)?;
+    writeln!(out, "removed ids: {}", removed.join(", "))?;
     Ok(Outcome::Ok)
 }

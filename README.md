@@ -255,11 +255,12 @@ flowchart LR
   source-based coverage; tests, testkit, examples and benches are excluded
   from the denominator, doctests are not counted).
 
-The ggml type table is checked against ggml's block structs with
-[`scripts/check-ggml-type-sizes.sh`](scripts/check-ggml-type-sizes.sh), which
-compiles a small C program against `src/ggml-common.h` at the pinned commit
-and compares `sizeof` of all 27 quantized block types with `gguf-inspect types`
-(output on the development machine: `ok: 27 quantized types match ggml
+The ggml type table is checked against ggml with
+[`scripts/check-ggml-type-table.sh`](scripts/check-ggml-type-table.sh), which
+compiles ggml's own `type_traits` table against its headers at the pinned
+commit and compares every type ID, name, block size, block byte size,
+quantized flag and removed ID with `gguf-inspect types` (output on the
+development machine: `ok: 35 types and 8 removed IDs match ggml
 a05c9922613c6a2230dbb1d0de679519ecafb4f0`).
 
 ## Benchmarks
