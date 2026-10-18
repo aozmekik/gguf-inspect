@@ -10,7 +10,7 @@ mod types;
 use std::io::Write;
 
 use gguf_inspect::model::PerLayer;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 pub(crate) use diff::diff;
 pub(crate) use info::info;
@@ -46,4 +46,25 @@ impl<'a> From<&'a PerLayer> for PerLayerJson<'a> {
             PerLayer::List(v) => Self::List(v),
         }
     }
+}
+
+/// A JSON array produced from an iterator as it is written, so a listing of
+/// a million entries is never collected in memory.
+struct JsonSeq<F>(F);
+
+impl<F, I> Serialize for JsonSeq<F>
+where
+    F: Fn() -> I,
+    I: IntoIterator,
+    I::Item: Serialize,
+{
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq((self.0)())
+    }
+}
+
+/// `1 tensor`, `2 tensors`.
+fn plural(n: u64, one: &str, many: &str) -> String {
+    let word = if n == 1 { one } else { many };
+    format!("{} {word}", crate::format::thousands(n))
 }

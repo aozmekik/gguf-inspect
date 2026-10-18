@@ -7,8 +7,8 @@ use gguf_inspect::MetadataValue;
 use serde::Serialize;
 use serde_json::Value as Json;
 
-use super::write_json;
-use crate::format::Table;
+use super::{JsonSeq, write_json};
+use crate::format::Columns;
 use crate::values::{PREVIEW_ITEMS, Preview, render, to_json, type_name};
 use crate::{Failure, Outcome, escape, open};
 
@@ -34,15 +34,16 @@ pub(crate) fn metadata(
     out: &mut dyn Write,
 ) -> Result<Outcome, Failure> {
     let gguf = open(path)?;
-    let entries = gguf
-        .metadata()
-        .iter()
-        .filter(|(key, _)| filter.is_none_or(|prefix| key.starts_with(prefix)));
+    let entries = || {
+        gguf.metadata()
+            .iter()
+            .filter(|(key, _)| filter.is_none_or(|prefix| key.starts_with(prefix)))
+    };
 
     if json {
         let max_items = (!full).then_some(PREVIEW_ITEMS);
-        let rows: Vec<EntryJson<'_>> = entries
-            .map(|(key, value)| {
+        let rows = JsonSeq(|| {
+            entries().map(|(key, value)| {
                 let array = value.as_array();
                 EntryJson {
                     key,
@@ -53,20 +54,19 @@ pub(crate) fn metadata(
                     value: to_json(value, max_items),
                 }
             })
-            .collect();
+        });
         write_json(out, &rows)?;
         return Ok(Outcome::Ok);
     }
 
-    let preview = if full { Preview::FULL } else { Preview::SHORT };
-    let mut table = Table::with_header(&["KEY", "TYPE", "VALUE"]);
-    let mut any_truncated = false;
-    for (key, value) in entries {
-        let (text, truncated) = render(value, preview);
-        any_truncated |= truncated;
-        table.row([key.to_owned(), type_name(value), with_len(value, text)]);
+    // Two passes, so that no rendered row is kept: measure, then print.
+    let mut columns = Columns::with_header(&["KEY", "TYPE", "VALUE"]);
+    let mut shown = 0_u64;
+    for (key, value) in entries() {
+        columns.measure(&[key, type_name(value).as_str()]);
+        shown += 1;
     }
-    if table.is_empty() {
+    if shown == 0 {
         if let Some(prefix) = filter {
             writeln!(
                 out,
@@ -78,7 +78,14 @@ pub(crate) fn metadata(
         }
         return Ok(Outcome::Ok);
     }
-    table.render(out)?;
+    let preview = if full { Preview::FULL } else { Preview::SHORT };
+    let mut any_truncated = false;
+    columns.write_header(out)?;
+    for (key, value) in entries() {
+        let (text, truncated) = render(value, preview);
+        any_truncated |= truncated;
+        columns.write_row(out, &[key, &type_name(value), &with_len(value, text)])?;
+    }
     if any_truncated {
         writeln!(out)?;
         writeln!(

@@ -1,6 +1,6 @@
 //! The parsed header of a GGUF file and the parser that produces it.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::error::{Error, ErrorKind, Result};
 use crate::metadata::{Metadata, MetadataArray, MetadataValue, ValueType};
+use crate::name_index::NameIndex;
 use crate::reader::Reader;
 use crate::{GgmlType, Limits, TensorInfo};
 
@@ -84,7 +85,7 @@ pub struct GgufFile {
     version: GgufVersion,
     metadata: Metadata,
     tensors: Vec<TensorInfo>,
-    tensor_index: HashMap<String, usize>,
+    tensor_index: NameIndex,
     alignment: u32,
     header_size: u64,
     data_offset: u64,
@@ -181,7 +182,9 @@ impl GgufFile {
 
     /// The tensor called `name`.
     pub fn tensor(&self, name: &str) -> Option<&TensorInfo> {
-        self.tensor_index.get(name).map(|&i| &self.tensors[i])
+        self.tensor_index
+            .find(name, |i| self.tensors[i].name())
+            .map(|i| &self.tensors[i])
     }
 
     /// Data alignment: `general.alignment`, or 32 if absent.
@@ -487,8 +490,9 @@ impl<R: Read> Parser<'_, R> {
             self.limits.max_metadata_entries,
             kv_count_at,
         )?;
-        self.r
-            .check_count("metadata entry count", kv_count, MIN_KV_BYTES, kv_count_at)?;
+        let n_kv =
+            self.r
+                .check_count("metadata entry count", kv_count, MIN_KV_BYTES, kv_count_at)?;
         self.r.check_count(
             "tensor count",
             tensor_count,
@@ -496,10 +500,14 @@ impl<R: Read> Parser<'_, R> {
             tensor_count_at,
         )?;
 
-        let mut metadata = Metadata::default();
-        for i in 0..kv_count {
-            self.metadata_entry(i, &mut metadata)?;
+        let mut entries = Vec::with_capacity(n_kv.min(MAX_PREALLOCATED));
+        for i in 0..n_kv {
+            entries.push(self.metadata_entry(i)?);
         }
+        let metadata = Metadata::from_entries(entries).map_err(|dup| {
+            Error::new(ErrorKind::DuplicateKey(dup.key), dup.offset)
+                .with_context(|| format!("metadata entry {}", dup.position))
+        })?;
         let alignment = alignment(&metadata)?;
 
         // Re-check now that the metadata has been consumed.
@@ -511,21 +519,27 @@ impl<R: Read> Parser<'_, R> {
         )?;
         let reserve = n_tensors.min(MAX_PREALLOCATED);
         let mut tensors = Vec::with_capacity(reserve);
-        let mut offset_fields = Vec::with_capacity(reserve);
-        let mut tensor_index = HashMap::with_capacity(reserve);
+        let mut record_starts = Vec::with_capacity(reserve);
         for i in 0..n_tensors {
-            let (tensor, offset_at) = self.tensor_info(i, &tensor_index)?;
-            tensor_index.insert(tensor.name().to_owned(), i);
-            tensors.push(tensor);
-            offset_fields.push(offset_at);
+            record_starts.push(self.r.position());
+            tensors.push(self.tensor_info(i)?);
         }
+        let tensor_index = NameIndex::build(tensors.len(), |i| tensors[i].name()).map_err(|i| {
+            Error::new(
+                ErrorKind::DuplicateTensorName(tensors[i].name().to_owned()),
+                record_starts[i],
+            )
+            .with_context(|| format!("tensor info {i}"))
+        })?;
 
         let header_size = self.r.position();
         let data_offset = align_up(header_size, alignment)
             .ok_or_else(|| Error::new(ErrorKind::OffsetOverflow, header_size))?;
-        for (tensor, &at) in tensors.iter_mut().zip(&offset_fields) {
+        for (tensor, &start) in tensors.iter_mut().zip(&record_starts) {
             let absolute = data_offset.checked_add(tensor.offset()).ok_or_else(|| {
-                Error::new(ErrorKind::OffsetOverflow, at)
+                // The offset field is the last 8 bytes of the record.
+                let offset_field = start + tensor_info_size(tensor) - 8;
+                Error::new(ErrorKind::OffsetOverflow, offset_field)
                     .with_context(|| format!("tensor info `{}`", tensor.name()))
             })?;
             tensor.set_absolute_offset(absolute);
@@ -559,7 +573,8 @@ impl<R: Read> Parser<'_, R> {
         Err(Error::new(kind, at))
     }
 
-    fn metadata_entry(&mut self, index: u64, metadata: &mut Metadata) -> Result<()> {
+    /// Reads one metadata entry: key, value and the offset where it starts.
+    fn metadata_entry(&mut self, index: usize) -> Result<(String, MetadataValue, u64)> {
         let at = self.r.position();
         let entry = || format!("metadata entry {index}");
         let key = self
@@ -569,16 +584,11 @@ impl<R: Read> Parser<'_, R> {
         if key.is_empty() {
             return Err(Error::new(ErrorKind::EmptyKey, at).with_context(entry));
         }
-        if metadata.contains_key(&key) {
-            return Err(Error::new(ErrorKind::DuplicateKey(key), at).with_context(entry));
-        }
         let value = self
             .value_type()
             .and_then(|ty| self.value(ty, 0))
             .map_err(|e| e.with_context(|| format!("metadata entry {index} `{key}`")))?;
-        let inserted = metadata.insert(key, value, at);
-        debug_assert!(inserted, "duplicates are rejected above");
-        Ok(())
+        Ok((key, value, at))
     }
 
     fn value_type(&mut self) -> Result<ValueType> {
@@ -651,22 +661,13 @@ impl<R: Read> Parser<'_, R> {
         })
     }
 
-    /// Reads one tensor info record and returns it with the offset of its
-    /// `offset` field.
-    fn tensor_info(
-        &mut self,
-        index: usize,
-        seen: &HashMap<String, usize>,
-    ) -> Result<(TensorInfo, u64)> {
-        let at = self.r.position();
+    /// Reads one tensor info record.
+    fn tensor_info(&mut self, index: usize) -> Result<TensorInfo> {
         let record = || format!("tensor info {index}");
         let name = self
             .r
             .string("tensor name length", MAX_TENSOR_NAME_LEN)
             .map_err(|e| e.with_context(record))?;
-        if seen.contains_key(&name) {
-            return Err(Error::new(ErrorKind::DuplicateTensorName(name), at).with_context(record));
-        }
         let context = |e: Error| e.with_context(|| format!("tensor info {index} `{name}`"));
 
         let n_dims_at = self.r.position();
@@ -689,12 +690,10 @@ impl<R: Read> Parser<'_, R> {
         let type_id = self.r.u32().map_err(context)?;
         let ggml_type = GgmlType::from_id(type_id)
             .ok_or_else(|| context(Error::new(ErrorKind::UnknownGgmlType(type_id), type_at)))?;
-        let offset_at = self.r.position();
         let offset = self.r.u64().map_err(context)?;
 
-        let tensor = TensorInfo::new(name.clone(), dims, ggml_type, offset)
-            .map_err(|kind| context(Error::new(kind, dims_at)))?;
-        Ok((tensor, offset_at))
+        TensorInfo::new(name.clone(), dims, ggml_type, offset)
+            .map_err(|kind| context(Error::new(kind, dims_at)))
     }
 }
 
@@ -706,6 +705,12 @@ fn check_cap(what: &'static str, value: u64, limit: u64, at: u64) -> Result<()> 
         ));
     }
     Ok(())
+}
+
+/// Bytes a tensor info record occupies: name length and name, `n_dims`,
+/// dimensions, type and offset.
+fn tensor_info_size(t: &TensorInfo) -> u64 {
+    8 + t.name().len() as u64 + 4 + 8 * t.dims().len() as u64 + 4 + 8
 }
 
 /// Reads and validates `general.alignment`, defaulting to 32.

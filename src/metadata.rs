@@ -1,7 +1,8 @@
 //! Metadata key-value pairs and their typed values.
 
-use std::collections::HashMap;
 use std::fmt;
+
+use crate::name_index::NameIndex;
 
 /// The type tag of a metadata value (`gguf_metadata_value_type` in the spec).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -351,6 +352,10 @@ impl MetadataArray {
     }
 
     /// A copy of the element at `index`.
+    ///
+    /// Strings and nested arrays are cloned. For borrowed access, match on
+    /// the variant (`MetadataArray::String(tokens)` gives `&Vec<String>`) or
+    /// use [`as_strings`](Self::as_strings).
     pub fn get(&self, index: usize) -> Option<MetadataValue> {
         Some(match self {
             Self::U8(v) => MetadataValue::U8(*v.get(index)?),
@@ -369,7 +374,8 @@ impl MetadataArray {
         })
     }
 
-    /// Iterates over copies of the elements.
+    /// Iterates over copies of the elements; see [`get`](Self::get) for
+    /// borrowed access.
     pub fn iter(&self) -> impl Iterator<Item = MetadataValue> + '_ {
         (0..self.len()).map_while(|i| self.get(i))
     }
@@ -395,19 +401,45 @@ impl MetadataArray {
     /// Exact equality with floats compared by bit pattern; see
     /// [`MetadataValue::bitwise_eq`].
     pub fn bitwise_eq(&self, other: &Self) -> bool {
+        self.first_difference(other).is_none()
+    }
+
+    /// The index of the first element where the arrays differ, compared as
+    /// by [`bitwise_eq`](Self::bitwise_eq), or the length of the shorter
+    /// array if it is a prefix of the longer one. `None` if they are equal.
+    /// Arrays of different element types differ at index 0, even when empty.
+    /// Nothing is copied.
+    ///
+    /// ```
+    /// use gguf_inspect::MetadataArray;
+    ///
+    /// let a = MetadataArray::U32(vec![1, 2, 3]);
+    /// assert_eq!(a.first_difference(&MetadataArray::U32(vec![1, 9, 3])), Some(1));
+    /// assert_eq!(a.first_difference(&MetadataArray::U32(vec![1, 2])), Some(2));
+    /// assert_eq!(a.first_difference(&a.clone()), None);
+    /// ```
+    pub fn first_difference(&self, other: &Self) -> Option<usize> {
+        fn first<T>(a: &[T], b: &[T], eq: impl Fn(&T, &T) -> bool) -> Option<usize> {
+            a.iter()
+                .zip(b)
+                .position(|(x, y)| !eq(x, y))
+                .or_else(|| (a.len() != b.len()).then(|| a.len().min(b.len())))
+        }
         match (self, other) {
-            (Self::F32(x), Self::F32(y)) => x
-                .iter()
-                .map(|v| v.to_bits())
-                .eq(y.iter().map(|v| v.to_bits())),
-            (Self::F64(x), Self::F64(y)) => x
-                .iter()
-                .map(|v| v.to_bits())
-                .eq(y.iter().map(|v| v.to_bits())),
-            (Self::Array(x), Self::Array(y)) => {
-                x.len() == y.len() && x.iter().zip(y).all(|(p, q)| p.bitwise_eq(q))
-            }
-            _ => self == other,
+            (Self::U8(a), Self::U8(b)) => first(a, b, PartialEq::eq),
+            (Self::I8(a), Self::I8(b)) => first(a, b, PartialEq::eq),
+            (Self::U16(a), Self::U16(b)) => first(a, b, PartialEq::eq),
+            (Self::I16(a), Self::I16(b)) => first(a, b, PartialEq::eq),
+            (Self::U32(a), Self::U32(b)) => first(a, b, PartialEq::eq),
+            (Self::I32(a), Self::I32(b)) => first(a, b, PartialEq::eq),
+            (Self::U64(a), Self::U64(b)) => first(a, b, PartialEq::eq),
+            (Self::I64(a), Self::I64(b)) => first(a, b, PartialEq::eq),
+            (Self::Bool(a), Self::Bool(b)) => first(a, b, PartialEq::eq),
+            (Self::String(a), Self::String(b)) => first(a, b, PartialEq::eq),
+            (Self::F32(a), Self::F32(b)) => first(a, b, |x, y| x.to_bits() == y.to_bits()),
+            (Self::F64(a), Self::F64(b)) => first(a, b, |x, y| x.to_bits() == y.to_bits()),
+            (Self::Array(a), Self::Array(b)) => first(a, b, Self::bitwise_eq),
+            _ => Some(0),
         }
     }
 
@@ -420,26 +452,67 @@ impl MetadataArray {
     }
 }
 
-/// The metadata section of a GGUF file: key-value pairs in file order with
-/// O(1) lookup by key. Keys are unique (duplicates are rejected when parsing).
+/// The metadata section of a GGUF file: key-value pairs in file order, with
+/// lookup by key in `O(log n)`. Keys are unique (duplicates are rejected when
+/// parsing) and stored once.
 #[derive(Debug, Clone, Default)]
 pub struct Metadata {
-    entries: Vec<(String, MetadataValue)>,
-    offsets: Vec<u64>,
-    index: HashMap<String, usize>,
+    entries: Vec<Entry>,
+    index: NameIndex,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Entry {
+    key: String,
+    value: MetadataValue,
+    offset: u64,
+}
+
+/// The first entry, in file order, whose key repeats an earlier one.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DuplicateKey {
+    pub(crate) position: usize,
+    pub(crate) key: String,
+    pub(crate) offset: u64,
 }
 
 impl Metadata {
+    /// Builds the metadata from entries in file order, each with the byte
+    /// offset where it starts.
+    pub(crate) fn from_entries(
+        entries: impl IntoIterator<Item = (String, MetadataValue, u64)>,
+    ) -> Result<Self, DuplicateKey> {
+        let mut entries: Vec<Entry> = entries
+            .into_iter()
+            .map(|(key, value, offset)| Entry { key, value, offset })
+            .collect();
+        match NameIndex::build(entries.len(), |i| &entries[i].key) {
+            Ok(index) => Ok(Self { entries, index }),
+            Err(position) => {
+                let Entry { key, offset, .. } = entries.swap_remove(position);
+                Err(DuplicateKey {
+                    position,
+                    key,
+                    offset,
+                })
+            }
+        }
+    }
+
     /// Appends an entry that starts at byte `offset`. Returns `false`, leaving
     /// the metadata unchanged, if the key already exists.
+    #[cfg(test)]
     pub(crate) fn insert(&mut self, key: String, value: MetadataValue, offset: u64) -> bool {
-        if self.index.contains_key(&key) {
+        if self.contains_key(&key) {
             return false;
         }
-        self.index.insert(key.clone(), self.entries.len());
-        self.entries.push((key, value));
-        self.offsets.push(offset);
-        true
+        self.entries.push(Entry { key, value, offset });
+        let entries = &self.entries;
+        self.index.insert(entries.len() - 1, |i| &entries[i].key)
+    }
+
+    fn position(&self, key: &str) -> Option<usize> {
+        self.index.find(key, |i| &self.entries[i].key)
     }
 
     /// Number of entries.
@@ -454,12 +527,12 @@ impl Metadata {
 
     /// The value stored under `key`.
     pub fn get(&self, key: &str) -> Option<&MetadataValue> {
-        self.index.get(key).map(|&i| &self.entries[i].1)
+        self.position(key).map(|i| &self.entries[i].value)
     }
 
     /// Whether `key` is present.
     pub fn contains_key(&self, key: &str) -> bool {
-        self.index.contains_key(key)
+        self.position(key).is_some()
     }
 
     /// The string stored under `key`, if it is a string.
@@ -479,12 +552,12 @@ impl Metadata {
 
     /// Byte offset of the start of the entry for `key` (its key string).
     pub fn offset_of(&self, key: &str) -> Option<u64> {
-        self.index.get(key).map(|&i| self.offsets[i])
+        self.position(key).map(|i| self.entries[i].offset)
     }
 
     /// Iterates over entries in file order.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, &MetadataValue)> {
-        self.entries.iter().map(|(k, v)| (k.as_str(), v))
+        self.entries.iter().map(|e| (e.key.as_str(), &e.value))
     }
 }
 
@@ -492,7 +565,7 @@ impl Metadata {
 /// order; byte offsets are ignored.
 impl PartialEq for Metadata {
     fn eq(&self, other: &Self) -> bool {
-        self.entries == other.entries
+        self.iter().eq(other.iter())
     }
 }
 
@@ -615,6 +688,37 @@ mod tests {
     }
 
     #[test]
+    fn first_difference_of_every_variant() {
+        for array in one_of_each_array() {
+            assert_eq!(array.first_difference(&array.clone()), None);
+            // A different value or a different element type: index 0 either way.
+            let other = MetadataArray::F64(vec![9.0]);
+            assert_eq!(array.first_difference(&other), Some(0));
+        }
+        let nan = |bits: u32| MetadataArray::F32(vec![1.0, f32::from_bits(bits)]);
+        assert_eq!(nan(0x7fc0_0000).first_difference(&nan(0x7fc0_0000)), None);
+        assert_eq!(
+            nan(0x7fc0_0000).first_difference(&nan(0x7fc0_0001)),
+            Some(1)
+        );
+        let strings =
+            |v: &[&str]| MetadataArray::String(v.iter().map(|s| (*s).to_owned()).collect());
+        assert_eq!(
+            strings(&["a", "b"]).first_difference(&strings(&["a", "c"])),
+            Some(1)
+        );
+        assert_eq!(
+            strings(&["a"]).first_difference(&strings(&["a", "b"])),
+            Some(1)
+        );
+        assert_eq!(
+            MetadataArray::U8(vec![]).first_difference(&MetadataArray::I8(vec![])),
+            Some(0),
+            "element types differ"
+        );
+    }
+
+    #[test]
     fn metadata_preserves_order_and_rejects_duplicates() {
         let mut m = Metadata::default();
         assert!(m.insert("b".into(), MetadataValue::U8(1), 24));
@@ -626,5 +730,22 @@ mod tests {
         assert_eq!(m.get_str("a"), Some("x"));
         assert_eq!(m.offset_of("a"), Some(40));
         assert!(!m.contains_key("c"));
+    }
+
+    #[test]
+    fn from_entries_reports_the_first_repeated_key() {
+        let entry = |k: &str, offset| (k.to_owned(), MetadataValue::U8(0), offset);
+        let m = Metadata::from_entries([entry("z", 24), entry("a", 37)]).unwrap();
+        assert_eq!(m.iter().map(|(k, _)| k).collect::<Vec<_>>(), ["z", "a"]);
+        assert_eq!(m.offset_of("z"), Some(24));
+        let err = Metadata::from_entries([entry("a", 0), entry("b", 1), entry("a", 2)]);
+        assert_eq!(
+            err.unwrap_err(),
+            DuplicateKey {
+                position: 2,
+                key: "a".into(),
+                offset: 2
+            }
+        );
     }
 }

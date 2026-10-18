@@ -6,8 +6,8 @@ use std::path::Path;
 use gguf_inspect::TensorInfo;
 use serde::Serialize;
 
-use super::write_json;
-use crate::format::{Table, bytes, count, shape, thousands};
+use super::{JsonSeq, plural, write_json};
+use crate::format::{Columns, bytes, count, shape, thousands};
 use crate::{Failure, Outcome, TensorSort, open};
 
 #[derive(Serialize)]
@@ -38,9 +38,8 @@ pub(crate) fn tensors(
     }
 
     if json {
-        let rows: Vec<_> = list
-            .iter()
-            .map(|t| TensorJson {
+        let rows = JsonSeq(|| {
+            list.iter().map(|t| TensorJson {
                 name: t.name(),
                 ggml_type: t.ggml_type().name(),
                 dims: t.dims(),
@@ -49,7 +48,7 @@ pub(crate) fn tensors(
                 offset: t.offset(),
                 absolute_offset: t.absolute_offset(),
             })
-            .collect();
+        });
         write_json(out, &rows)?;
         return Ok(Outcome::Ok);
     }
@@ -58,24 +57,32 @@ pub(crate) fn tensors(
         writeln!(out, "no tensors")?;
         return Ok(Outcome::Ok);
     }
-    let mut table = Table::with_header(&["NAME", "TYPE", "SHAPE", "ELEMENTS", "BYTES", "OFFSET"])
-        .right(&[3, 4, 5]);
-    for t in &list {
-        table.row([
+    let cells = |t: &TensorInfo| {
+        [
             t.name().to_owned(),
             t.ggml_type().name().to_owned(),
             shape(t.dims()),
             thousands(t.n_elements()),
             bytes(t.n_bytes()),
             thousands(t.absolute_offset()),
-        ]);
+        ]
+    };
+    // Two passes, so that no rendered row is kept: measure, then print.
+    let mut columns =
+        Columns::with_header(&["NAME", "TYPE", "SHAPE", "ELEMENTS", "BYTES", "OFFSET"])
+            .right(&[3, 4, 5]);
+    for t in &list {
+        columns.measure(&cells(t));
     }
-    table.render(out)?;
+    columns.write_header(out)?;
+    for t in &list {
+        columns.write_row(out, &cells(t))?;
+    }
     writeln!(out)?;
     writeln!(
         out,
-        "{} tensors, {} parameters, {} of tensor data",
-        thousands(list.len() as u64),
+        "{}, {} parameters, {} of tensor data",
+        plural(list.len() as u64, "tensor", "tensors"),
         count(gguf.parameter_count()),
         bytes(gguf.tensor_data_size())
     )?;

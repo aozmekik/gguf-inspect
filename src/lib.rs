@@ -58,6 +58,7 @@ pub mod kv_cache;
 mod limits;
 mod metadata;
 pub mod model;
+mod name_index;
 mod reader;
 mod tensor;
 

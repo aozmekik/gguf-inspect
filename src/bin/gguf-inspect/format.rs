@@ -1,6 +1,5 @@
 //! Number formatting and aligned plain-text tables.
 
-use std::borrow::Cow;
 use std::io::{self, Write};
 
 use gguf_inspect::model::PerLayer;
@@ -94,27 +93,30 @@ pub(crate) enum Align {
     Right,
 }
 
-/// Columns separated by two spaces, padded by display width. Every cell is
-/// passed through [`escape::text`], so a cell taken from the file cannot
-/// break the layout or send control sequences to the terminal.
-#[derive(Debug, Default)]
-pub(crate) struct Table {
+/// The layout of a table: columns separated by two spaces and padded by
+/// display width. Every cell is passed through [`escape::text`], so a cell
+/// taken from the file cannot break the layout or send control sequences to
+/// the terminal.
+///
+/// Long listings use it directly in two passes over their data, measuring
+/// every row and then writing every row, so no row is kept in memory;
+/// [`Table`] buffers rows for the small tables.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Columns {
     header: Option<Vec<String>>,
     align: Vec<Align>,
-    rows: Vec<Vec<String>>,
+    widths: Vec<usize>,
     indent: usize,
 }
 
-impl Table {
+impl Columns {
     pub(crate) fn with_header(header: &[&str]) -> Self {
-        Self {
+        let mut columns = Self {
             header: Some(header.iter().map(|h| (*h).to_owned()).collect()),
             ..Self::default()
-        }
-    }
-
-    pub(crate) fn plain() -> Self {
-        Self::default()
+        };
+        columns.measure(header);
+        columns
     }
 
     /// Right-aligns the given column indices (numbers).
@@ -128,8 +130,85 @@ impl Table {
         self
     }
 
+    /// Widens the columns to fit `cells`. A left-aligned last column is
+    /// never padded, so it need not be measured.
+    pub(crate) fn measure<S: AsRef<str>>(&mut self, cells: &[S]) {
+        if self.widths.len() < cells.len() {
+            self.widths.resize(cells.len(), 0);
+        }
+        for (width, cell) in self.widths.iter_mut().zip(cells) {
+            *width = (*width).max(escape::text(cell.as_ref()).width());
+        }
+    }
+
+    pub(crate) fn write_header(&self, out: &mut dyn Write) -> io::Result<()> {
+        match &self.header {
+            Some(header) => self.write_row(out, header),
+            None => Ok(()),
+        }
+    }
+
+    pub(crate) fn write_row<S: AsRef<str>>(
+        &self,
+        out: &mut dyn Write,
+        cells: &[S],
+    ) -> io::Result<()> {
+        let mut line = " ".repeat(self.indent);
+        for (i, cell) in cells.iter().enumerate() {
+            let cell = escape::text(cell.as_ref());
+            let pad = self
+                .widths
+                .get(i)
+                .copied()
+                .unwrap_or(0)
+                .saturating_sub(cell.width());
+            if i > 0 {
+                line.push_str("  ");
+            }
+            match self.align.get(i).copied().unwrap_or(Align::Left) {
+                Align::Right => {
+                    line.push_str(&" ".repeat(pad));
+                    line.push_str(&cell);
+                }
+                Align::Left => {
+                    line.push_str(&cell);
+                    if i + 1 < cells.len() {
+                        line.push_str(&" ".repeat(pad));
+                    }
+                }
+            }
+        }
+        writeln!(out, "{}", line.trim_end())
+    }
+}
+
+/// A small table whose rows are kept until it is rendered.
+#[derive(Debug, Default)]
+pub(crate) struct Table {
+    columns: Columns,
+    rows: Vec<Vec<String>>,
+}
+
+impl Table {
+    pub(crate) fn with_header(header: &[&str]) -> Self {
+        Self {
+            columns: Columns::with_header(header),
+            rows: Vec::new(),
+        }
+    }
+
+    pub(crate) fn plain() -> Self {
+        Self::default()
+    }
+
+    /// Right-aligns the given column indices (numbers).
+    pub(crate) fn right(mut self, columns: &[usize]) -> Self {
+        self.columns = self.columns.right(columns);
+        self
+    }
+
     pub(crate) fn indent(mut self, spaces: usize) -> Self {
-        self.indent = spaces;
+        self.columns.indent = spaces;
         self
     }
 
@@ -138,55 +217,15 @@ impl Table {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.rows.push(
-            cells
-                .into_iter()
-                .map(|cell| {
-                    let cell: String = cell.into();
-                    match escape::text(&cell) {
-                        Cow::Borrowed(_) => cell,
-                        Cow::Owned(escaped) => escaped,
-                    }
-                })
-                .collect(),
-        );
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.rows.is_empty()
+        let row: Vec<String> = cells.into_iter().map(Into::into).collect();
+        self.columns.measure(&row);
+        self.rows.push(row);
     }
 
     pub(crate) fn render(&self, out: &mut dyn Write) -> io::Result<()> {
-        let all_rows = || self.header.iter().chain(&self.rows);
-        let columns = all_rows().map(Vec::len).max().unwrap_or(0);
-        let mut widths = vec![0; columns];
-        for row in all_rows() {
-            for (i, cell) in row.iter().enumerate() {
-                widths[i] = widths[i].max(cell.width());
-            }
-        }
-        for row in all_rows() {
-            let mut line = " ".repeat(self.indent);
-            for (i, cell) in row.iter().enumerate() {
-                let pad = widths[i] - cell.width();
-                let last = i + 1 == row.len();
-                if i > 0 {
-                    line.push_str("  ");
-                }
-                match self.align.get(i).copied().unwrap_or(Align::Left) {
-                    Align::Right => {
-                        line.push_str(&" ".repeat(pad));
-                        line.push_str(cell);
-                    }
-                    Align::Left => {
-                        line.push_str(cell);
-                        if !last {
-                            line.push_str(&" ".repeat(pad));
-                        }
-                    }
-                }
-            }
-            writeln!(out, "{}", line.trim_end())?;
+        self.columns.write_header(out)?;
+        for row in &self.rows {
+            self.columns.write_row(out, row)?;
         }
         Ok(())
     }
@@ -244,6 +283,24 @@ mod tests {
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "key\\nfake.key  \\u{1b}[2Jv\n"
+        );
+    }
+
+    #[test]
+    fn columns_render_in_two_passes() {
+        let rows = [["a", "1", "x"], ["bbb", "22", "a long last column"]];
+        let mut columns = Columns::with_header(&["K", "N", "V"]).right(&[1]);
+        for row in &rows {
+            columns.measure(&[row[0], row[1], ""]);
+        }
+        let mut out = Vec::new();
+        columns.write_header(&mut out).unwrap();
+        for row in &rows {
+            columns.write_row(&mut out, row).unwrap();
+        }
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "K     N  V\na     1  x\nbbb  22  a long last column\n"
         );
     }
 

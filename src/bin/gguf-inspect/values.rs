@@ -91,11 +91,11 @@ fn render_array(out: &mut String, array: &MetadataArray, preview: Preview) -> bo
     let shown = preview.items.map_or(len, |max| len.min(max));
     let mut truncated = shown < len;
     out.push('[');
-    for (i, item) in array.iter().take(shown).enumerate() {
+    for i in 0..shown {
         if i > 0 {
             out.push_str(", ");
         }
-        truncated |= render_into(out, &item, preview);
+        truncated |= render_item(out, array, i, preview);
     }
     if shown < len {
         if shown > 0 {
@@ -111,6 +111,18 @@ fn render_array(out: &mut String, array: &MetadataArray, preview: Preview) -> bo
     }
     out.push(']');
     truncated
+}
+
+/// Renders element `i` of `array` without copying strings or nested arrays.
+fn render_item(out: &mut String, array: &MetadataArray, i: usize, preview: Preview) -> bool {
+    match array {
+        MetadataArray::String(v) => render_string(out, &v[i], preview.chars),
+        MetadataArray::Array(v) => render_array(out, &v[i], preview),
+        // Numbers and bools are cheap to copy.
+        other => other
+            .get(i)
+            .is_some_and(|item| render_into(out, &item, preview)),
+    }
 }
 
 /// JSON for a float, using the shortest decimal that round-trips its own
@@ -142,13 +154,12 @@ pub(crate) fn to_json(value: &MetadataValue, max_items: Option<usize>) -> Json {
 
 fn array_to_json(array: &MetadataArray, max_items: Option<usize>) -> Json {
     let shown = max_items.map_or(array.len(), |m| array.len().min(m));
-    Json::Array(
-        array
-            .iter()
-            .take(shown)
-            .map(|item| to_json(&item, None))
-            .collect(),
-    )
+    let item = |i: usize| match array {
+        MetadataArray::String(v) => Json::String(v[i].clone()),
+        MetadataArray::Array(v) => array_to_json(&v[i], None),
+        other => other.get(i).map_or(Json::Null, |item| to_json(&item, None)),
+    };
+    Json::Array((0..shown).map(item).collect())
 }
 
 #[cfg(test)]

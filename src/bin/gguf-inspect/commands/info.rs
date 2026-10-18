@@ -7,7 +7,7 @@ use gguf_inspect::model::{PerLayer, file_type_name};
 use gguf_inspect::{GgufFile, ModelInfo, TypeStats};
 use serde::Serialize;
 
-use super::{PerLayerJson, write_json};
+use super::{PerLayerJson, plural, write_json};
 use crate::format::{Table, attention, bytes, count, percent, thousands};
 use crate::{Failure, Outcome, escape, open};
 
@@ -54,7 +54,10 @@ fn render(
             thousands(gguf.data_offset())
         ),
     ]);
-    file.row(["metadata", &format!("{} entries", gguf.metadata().len())]);
+    file.row([
+        "metadata",
+        &plural(gguf.metadata().len() as u64, "entry", "entries"),
+    ]);
     file.row(["tensors", &thousands(gguf.tensors().len() as u64)]);
     file.render(out)?;
     writeln!(out)?;

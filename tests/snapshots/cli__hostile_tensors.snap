@@ -5,4 +5,4 @@ expression: r.stdout
 NAME              TYPE  SHAPE  ELEMENTS  BYTES  OFFSET
 t\u{1b}[1mBOLD\n  f32   [8]           8   32 B     576
 
-1 tensors, 8 parameters, 32 B of tensor data
+1 tensor, 8 parameters, 32 B of tensor data

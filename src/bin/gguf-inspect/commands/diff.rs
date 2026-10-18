@@ -139,26 +139,24 @@ fn describe_change(old: &MetadataValue, new: &MetadataValue) -> String {
                 thousands(y.len() as u64)
             )
         };
-        let first_difference = x
-            .iter()
-            .zip(y.iter())
-            .enumerate()
-            .find(|(_, (p, q))| !p.bitwise_eq(q));
-        return match (first_difference, x.len() == y.len()) {
-            (Some((i, (p, q))), same_len) => format!(
+        let element = |a: &gguf_inspect::MetadataArray, i: usize| {
+            a.get(i).map(|v| short(&v)).unwrap_or_default()
+        };
+        return match x.first_difference(y) {
+            Some(i) if i < x.len() && i < y.len() => format!(
                 "first difference at index {}: {} -> {}{}",
                 thousands(i as u64),
-                short(&p),
-                short(&q),
-                if same_len {
+                element(x, i),
+                element(y, i),
+                if x.len() == y.len() {
                     String::new()
                 } else {
                     format!("; {}", lengths())
                 }
             ),
-            (None, false) => format!("{} (shared elements identical)", lengths()),
+            Some(_) => format!("{} (shared elements identical)", lengths()),
             // Unreachable for arrays the diff reported, kept for totality.
-            (None, true) => "identical".to_owned(),
+            None => "identical".to_owned(),
         };
     }
     format!("{} -> {}", short(old), short(new))
