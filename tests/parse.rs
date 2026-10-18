@@ -200,24 +200,120 @@ fn validate_reports_data_section_problems() {
     bytes.truncate(usize::try_from(layout.data_offset).unwrap() + 100);
     let gguf = GgufFile::from_bytes(&bytes).unwrap();
     let issues = gguf.validate();
-    assert!(issues.contains(&Issue::MisalignedTensor {
-        tensor: "misaligned".into(),
-        offset: 300,
+    assert_eq!(
+        issues,
+        [
+            Issue::MisalignedTensors {
+                tensors: 1,
+                first: "misaligned".into(),
+                offset: 300,
+                alignment: 32,
+            },
+            Issue::DataOutOfBounds {
+                tensors: 3,
+                first: "first".into(),
+                data_end: layout.data_offset + 300 + 256,
+                file_size: bytes.len() as u64,
+            },
+            // `overlaps` [128, 384) starts inside `first` [0, 256), and
+            // `misaligned` [300, 556) inside `overlaps`.
+            Issue::OverlappingTensors {
+                tensors: 2,
+                first: "overlaps".into(),
+                overlapped: "first".into(),
+            },
+        ]
+    );
+    let messages: Vec<String> = issues.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        messages[0],
+        "tensor `misaligned` offset 300 is not a multiple of the alignment 32"
+    );
+    assert!(messages[1].starts_with("3 tensors, the first `first`, extend past the end"));
+    assert_eq!(
+        messages[2],
+        "data of 2 tensors overlaps an earlier tensor; the first is `overlaps`, which overlaps \
+         `first`"
+    );
+    let single = Issue::OverlappingTensors {
+        tensors: 1,
+        first: "b".into(),
+        overlapped: "a".into(),
+    };
+    assert_eq!(single.to_string(), "data of tensor `b` overlaps `a`");
+    let many = Issue::MisalignedTensors {
+        tensors: 2,
+        first: "m".into(),
+        offset: 3,
         alignment: 32,
-    }));
-    assert!(issues.contains(&Issue::OverlappingTensors {
-        first: "first".into(),
-        second: "overlaps".into(),
-    }));
-    assert!(issues.contains(&Issue::DataOutOfBounds {
-        tensors: 3,
-        first: "first".into(),
-        data_end: layout.data_offset + 300 + 256,
-        file_size: bytes.len() as u64,
-    }));
-    for issue in &issues {
-        assert_ne!(issue.to_string(), "");
+    };
+    assert_eq!(
+        many.to_string(),
+        "2 tensor offsets are not multiples of the alignment 32; the first is `m` at 3"
+    );
+}
+
+fn at(name: &str, elements: u64, offset: u64) -> TensorSpec {
+    TensorSpec {
+        name: name.into(),
+        dims: vec![elements],
+        type_id: GgmlType::F32.id(),
+        offset: Some(offset),
     }
+}
+
+#[test]
+fn one_tensor_overlapping_many_is_counted_for_each() {
+    // `big` covers [0, 4096); `a` and `b` lie inside it but not next to it
+    // in data order once `a` is seen.
+    let bytes = GgufBuilder::new()
+        .kv("general.architecture", &MetadataValue::String("x".into()))
+        .tensor_spec(at("big", 1024, 0))
+        .tensor_spec(at("a", 16, 64))
+        .tensor_spec(at("b", 16, 256))
+        .tensor_spec(at("after", 16, 4096))
+        .build();
+    let gguf = GgufFile::from_bytes(&bytes).unwrap();
+    assert_eq!(
+        gguf.validate(),
+        [Issue::OverlappingTensors {
+            tensors: 2,
+            first: "a".into(),
+            overlapped: "big".into(),
+        }]
+    );
+    assert_eq!(
+        gguf.validate()[0].to_string(),
+        "data of 2 tensors overlaps an earlier tensor; the first is `a`, which overlaps `big`"
+    );
+}
+
+#[test]
+fn many_bad_tensors_give_one_issue_of_each_kind() {
+    let mut builder =
+        GgufBuilder::new().kv("general.architecture", &MetadataValue::String("x".into()));
+    for i in 0..10_000 {
+        builder = builder.tensor_spec(at(&format!("t{i}"), 1, 4));
+    }
+    let gguf = GgufFile::from_bytes(&builder.header()).unwrap();
+    let issues = gguf.validate();
+    assert_eq!(issues.len(), 3, "{issues:?}");
+    assert!(matches!(
+        &issues[0],
+        Issue::MisalignedTensors { tensors: 10_000, first, offset: 4, .. } if first == "t0"
+    ));
+    assert!(matches!(
+        &issues[1],
+        Issue::DataOutOfBounds {
+            tensors: 10_000,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &issues[2],
+        Issue::OverlappingTensors { tensors: 9_999, first, overlapped }
+            if first == "t1" && overlapped == "t0"
+    ));
 }
 
 #[test]

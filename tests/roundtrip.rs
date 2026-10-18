@@ -116,7 +116,7 @@ proptest! {
 
         let layout_issues: Vec<_> = gguf.validate().into_iter().filter(|i| matches!(
             i,
-            Issue::DataOutOfBounds { .. } | Issue::OverlappingTensors { .. } | Issue::MisalignedTensor { .. }
+            Issue::DataOutOfBounds { .. } | Issue::OverlappingTensors { .. } | Issue::MisalignedTensors { .. }
         )).collect();
         prop_assert!(layout_issues.is_empty(), "{:?}", layout_issues);
     }

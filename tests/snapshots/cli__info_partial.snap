@@ -28,4 +28,4 @@ quantization
   f32         5      1.28 K    5.00 KiB   0.5%  32.00
 
 warnings
-  - 10 tensor(s) starting with `blk.1.attn_q.weight` extend past the end of the file (data ends at byte 1059232, file is 529616 bytes); the file may be truncated
+  - 10 tensors, the first `blk.1.attn_q.weight`, extend past the end of the file (data ends at byte 1059232, file is 529616 bytes); the file may be truncated

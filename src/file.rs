@@ -241,7 +241,9 @@ impl GgufFile {
     /// read: tensor data placement and keys the spec requires.
     ///
     /// A partially downloaded model, for example, parses fine but reports
-    /// [`Issue::DataOutOfBounds`].
+    /// [`Issue::DataOutOfBounds`]. Each kind of issue is reported at most
+    /// once, with a count and the first affected tensor, so the result stays
+    /// small however many tensors a file has.
     pub fn validate(&self) -> Vec<Issue> {
         let mut issues = Vec::new();
         if self.architecture().is_none() {
@@ -254,43 +256,70 @@ impl GgufFile {
         if !self.alignment.is_multiple_of(8) {
             issues.push(Issue::AlignmentNotMultipleOf8(self.alignment));
         }
-        for t in &self.tensors {
-            if !t.offset().is_multiple_of(u64::from(self.alignment)) {
-                issues.push(Issue::MisalignedTensor {
-                    tensor: t.name().to_owned(),
-                    offset: t.offset(),
-                    alignment: self.alignment,
-                });
-            }
-        }
 
-        let beyond: Vec<&TensorInfo> = self
+        let alignment = u64::from(self.alignment);
+        let mut misaligned = self
             .tensors
             .iter()
-            .filter(|t| t.data_range().end > self.file_size)
-            .collect();
-        if let Some(first) = beyond.first() {
-            let data_end = beyond.iter().map(|t| t.data_range().end).max().unwrap_or(0);
+            .filter(|t| !t.offset().is_multiple_of(alignment));
+        if let Some(first) = misaligned.next() {
+            issues.push(Issue::MisalignedTensors {
+                tensors: 1 + misaligned.count(),
+                first: first.name().to_owned(),
+                offset: first.offset(),
+                alignment: self.alignment,
+            });
+        }
+
+        let mut beyond = self
+            .tensors
+            .iter()
+            .filter(|t| t.data_range().end > self.file_size);
+        if let Some(first) = beyond.next() {
+            let (count, data_end) = beyond.fold((1, first.data_range().end), |(n, end), t| {
+                (n + 1, end.max(t.data_range().end))
+            });
             issues.push(Issue::DataOutOfBounds {
-                tensors: beyond.len(),
+                tensors: count,
                 first: first.name().to_owned(),
                 data_end,
                 file_size: self.file_size,
             });
         }
 
+        if let Some(issue) = self.overlaps() {
+            issues.push(issue);
+        }
+        issues
+    }
+
+    /// Sweeps the tensors in data order, tracking the furthest data end so
+    /// far, so that a tensor overlapping any earlier one is found, not only
+    /// one overlapping its neighbour.
+    fn overlaps(&self) -> Option<Issue> {
         let mut by_offset: Vec<&TensorInfo> =
             self.tensors.iter().filter(|t| t.n_bytes() > 0).collect();
         by_offset.sort_by_key(|t| t.absolute_offset());
-        for pair in by_offset.windows(2) {
-            if pair[0].data_range().end > pair[1].absolute_offset() {
-                issues.push(Issue::OverlappingTensors {
-                    first: pair[0].name().to_owned(),
-                    second: pair[1].name().to_owned(),
-                });
+        let mut furthest: Option<&TensorInfo> = None;
+        let mut count = 0;
+        let mut first = None;
+        for t in by_offset {
+            if let Some(owner) = furthest {
+                if t.absolute_offset() < owner.data_range().end {
+                    count += 1;
+                    first.get_or_insert((t, owner));
+                }
+                if t.data_range().end <= owner.data_range().end {
+                    continue;
+                }
             }
+            furthest = Some(t);
         }
-        issues
+        first.map(|(tensor, overlapped)| Issue::OverlappingTensors {
+            tensors: count,
+            first: tensor.name().to_owned(),
+            overlapped: overlapped.name().to_owned(),
+        })
     }
 }
 
@@ -319,11 +348,13 @@ pub enum Issue {
     MissingQuantizationVersion,
     /// The spec requires the alignment to be a multiple of 8.
     AlignmentNotMultipleOf8(u32),
-    /// A tensor's offset is not a multiple of the alignment.
-    MisalignedTensor {
-        /// Tensor name.
-        tensor: String,
-        /// Offset relative to the data section.
+    /// Some tensor offsets are not multiples of the alignment.
+    MisalignedTensors {
+        /// Number of tensors affected.
+        tensors: usize,
+        /// The first affected tensor in file order.
+        first: String,
+        /// Its offset, relative to the data section.
         offset: u64,
         /// The file's alignment.
         alignment: u32,
@@ -340,12 +371,15 @@ pub enum Issue {
         /// The actual file size.
         file_size: u64,
     },
-    /// Two tensors' data ranges overlap.
+    /// Some tensors' data starts inside the data of a tensor that starts at
+    /// the same offset or earlier.
     OverlappingTensors {
-        /// The tensor that starts first.
+        /// Number of tensors that overlap an earlier one.
+        tensors: usize,
+        /// The first such tensor in data order.
         first: String,
-        /// The tensor that starts inside it.
-        second: String,
+        /// The tensor it overlaps.
+        overlapped: String,
     },
 }
 
@@ -364,27 +398,56 @@ impl fmt::Display for Issue {
                     "alignment {a} is not a multiple of 8 as the spec requires"
                 )
             }
-            Self::MisalignedTensor {
-                tensor,
+            Self::MisalignedTensors {
+                tensors: 1,
+                first,
                 offset,
                 alignment,
             } => write!(
                 f,
-                "tensor `{tensor}` offset {offset} is not a multiple of the alignment {alignment}"
+                "tensor `{first}` offset {offset} is not a multiple of the alignment {alignment}"
+            ),
+            Self::MisalignedTensors {
+                tensors,
+                first,
+                offset,
+                alignment,
+            } => write!(
+                f,
+                "{tensors} tensor offsets are not multiples of the alignment {alignment}; \
+                 the first is `{first}` at {offset}"
             ),
             Self::DataOutOfBounds {
                 tensors,
                 first,
                 data_end,
                 file_size,
+            } => {
+                if *tensors == 1 {
+                    write!(f, "tensor `{first}` extends")?;
+                } else {
+                    write!(f, "{tensors} tensors, the first `{first}`, extend")?;
+                }
+                write!(
+                    f,
+                    " past the end of the file (data ends at byte {data_end}, file is \
+                     {file_size} bytes); the file may be truncated"
+                )
+            }
+            Self::OverlappingTensors {
+                tensors: 1,
+                first,
+                overlapped,
+            } => write!(f, "data of tensor `{first}` overlaps `{overlapped}`"),
+            Self::OverlappingTensors {
+                tensors,
+                first,
+                overlapped,
             } => write!(
                 f,
-                "{tensors} tensor(s) starting with `{first}` extend past the end of the file \
-                 (data ends at byte {data_end}, file is {file_size} bytes); the file may be truncated"
+                "data of {tensors} tensors overlaps an earlier tensor; the first is `{first}`, \
+                 which overlaps `{overlapped}`"
             ),
-            Self::OverlappingTensors { first, second } => {
-                write!(f, "data of tensors `{first}` and `{second}` overlaps")
-            }
         }
     }
 }
