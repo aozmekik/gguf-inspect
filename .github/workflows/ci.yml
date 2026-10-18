@@ -96,3 +96,20 @@ jobs:
         run: cargo bench --no-run --locked
       - name: Type table matches ggml (IDs, names, sizes)
         run: ./scripts/check-ggml-type-table.sh
+
+  fixtures:
+    name: gguf-py fixtures are reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Regenerate with gguf-py and compare byte for byte
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet -r tests/fixtures/gguf-py/requirements.txt
+          "$RUNNER_TEMP/venv/bin/python" -I tests/fixtures/gguf-py/generate.py "$RUNNER_TEMP/fixtures"
+          for f in tests/fixtures/gguf-py/*.gguf; do
+            cmp "$f" "$RUNNER_TEMP/fixtures/$(basename "$f")"
+          done

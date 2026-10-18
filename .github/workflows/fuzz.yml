@@ -1,0 +1,48 @@
+name: Fuzz
+
+# The libFuzzer target with AddressSanitizer needs a nightly toolchain, so it
+# runs on a schedule rather than on every push; CI only checks that it builds.
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays, 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  parse:
+    name: cargo-fuzz parse (nightly, AddressSanitizer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust stable and nightly
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup toolchain install nightly --profile minimal
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            fuzz
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Seed the corpus
+        run: |
+          mkdir -p fuzz/corpus/parse
+          cargo run --locked --example synth -- --header-only fuzz/corpus/parse/tiny-header.gguf
+          cargo run --locked --example synth -- --every-type fuzz/corpus/parse/every-type.gguf
+          cp tests/fixtures/gguf-py/*.gguf fuzz/corpus/parse/
+      - name: Fuzz for 20 minutes
+        run: cargo +nightly fuzz run parse fuzz/corpus/parse -- -max_len=16384 -max_total_time=1200
+      - name: Keep the crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
