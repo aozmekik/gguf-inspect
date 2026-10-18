@@ -57,6 +57,12 @@ implausible-but-consistent files on top.
   about 6 ms (see the README for the exact command and conditions); the whole
   `gguf-inspect info` run on an 8B-shaped header takes about 9 ms, of which
   about 2.5 ms is process start-up.
-- Memory use is proportional to the header size, never to declared lengths.
+- Memory follows what the header holds, never declared lengths. Owned
+  values cost more than their encoding, most for headers made of many tiny
+  records: about 90 bytes per one-byte metadata entry and about 170 bytes per
+  scalar tensor info at peak (measured on headers of 2^20 of each; see
+  `Limits` for the numbers). Keys and tensor names are stored once and looked
+  up by binary search, and the CLI streams long listings instead of keeping
+  rendered rows.
 - Reading tensor *data* is out of scope. If it is ever added, mmap or
   positioned reads would be reconsidered for that part only.

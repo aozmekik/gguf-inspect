@@ -42,19 +42,25 @@ versions other than 2 and 3, unknown value type tags, bools other than 0/1
 (the spec calls anything else invalid), invalid UTF-8 in keys, strings and
 tensor names (the spec says UTF-8), empty or duplicate keys, duplicate tensor
 names, `general.alignment` that is not a power-of-two `u32`, tensor types
-whose storage size is unknown (removed or newer than this crate), shapes whose
-element count overflows `i64`, first dimensions that are not a whole number of
-blocks, and declared sizes over the configured limits.
+whose storage size is unknown (removed or newer than this crate), shapes with
+a dimension above `i64::MAX` or whose dimensions overflow `i64` when
+multiplied in order (as `gguf.cpp` checks), byte sizes that overflow `u64`,
+first dimensions that are not a whole number of blocks, and declared sizes
+over the configured limits. Paths that are not regular files (pipes,
+devices) are rejected up front, because declared sizes are checked against
+the file size.
 
 Issues: tensor data extending past the end of the file, offsets not aligned,
 overlapping tensors, an alignment that is not a multiple of 8, a missing
 `general.architecture`, and quantized tensors without
-`general.quantization_version`.
+`general.quantization_version`. Each kind is reported once, with a count and
+the first affected tensor, so a hostile file cannot produce a million
+warnings.
 
 Where this differs from `gguf.cpp`: bools are checked strictly (`gguf.cpp`
 treats any non-zero byte as true), strings must be valid UTF-8 (`gguf.cpp`
 does not check), nested arrays are supported (the spec allows them; `gguf.cpp`
-rejects them), tensor names may be 64 bytes long as the spec says
+rejects them) up to 8 levels by default and never more than 64, tensor names may be 64 bytes long as the spec says
 (`gguf.cpp` stops at 63 because it stores a NUL terminator), and tensor
 offsets need not be packed back to back (`gguf.cpp` requires each offset to
 equal the running total; that is not checked here, because inspection does

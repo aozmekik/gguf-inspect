@@ -13,15 +13,23 @@ The standard way; it also enables AddressSanitizer.
 rustup toolchain install nightly
 cargo install cargo-fuzz
 
-# Seed corpus from the synthetic writer (run from the repository root).
+# Seed corpus (run from the repository root): synthetic headers from this
+# repository's writer and the files written by gguf-py.
 mkdir -p fuzz/corpus/parse
 cargo run --example synth -- --header-only fuzz/corpus/parse/tiny-header.gguf
 cargo run --example synth -- --every-type fuzz/corpus/parse/every-type.gguf
+cp tests/fixtures/gguf-py/*.gguf fuzz/corpus/parse/
 
 cargo +nightly fuzz run parse fuzz/corpus/parse -- -max_len=16384
 ```
 
-`fuzz/corpus/` and `fuzz/artifacts/` are git-ignored.
+`fuzz/corpus/` and `fuzz/artifacts/` are git-ignored. The `Fuzz` workflow
+(`.github/workflows/fuzz.yml`) is scheduled to run this for 20 minutes every
+Monday and keeps any crashing inputs as an artifact.
+
+The target covers the library. The CLI's rendering of file contents is
+exercised end to end by `tests/cli_properties.rs`, which runs the binary on
+mutated and arbitrary-Unicode files.
 
 ## On stable, without a sanitizer
 
@@ -43,7 +51,8 @@ RUSTFLAGS="-Cpasses=sancov-module \
 ./target/*/release/parse corpus/parse -max_len=16384 -max_total_time=300
 ```
 
-Result of that run on 2026-10-18 at commit `4003852` (Apple M1 Pro, 16 GB,
-Rust 1.99.1, seeded with the two files above, machine shared with other build
-jobs): 13,510,653 executions in 301 s, no crashes, peak RSS 32 MB. An earlier
-300 s run on commit `fd28152` executed 3,925,632 inputs, also without crashes.
+Result of that run on 2026-10-18 at commit `82be21f` (Apple M1 Pro, 16 GB,
+Rust 1.99.1, seeded with the five files above, load average 11-14 from other
+build jobs): 24,324,815 executions in 301 s, no crashes, peak RSS 35.2 MB
+(`/usr/bin/time -l`). The nightly AddressSanitizer run has not been done
+locally, because no nightly toolchain was available.

@@ -9,6 +9,19 @@
 /// in published models (vocabularies have around 32 000-260 000 entries;
 /// models have a few hundred to a few thousand tensors).
 ///
+/// # Memory use
+///
+/// Parsed values are owned, so memory grows with what the header holds, not
+/// with what it declares. Besides the bytes of its strings and arrays, each
+/// metadata entry and tensor info has a fixed cost that is larger than its
+/// encoding: headers made of many tiny records use the most memory per byte.
+/// Measured with `/usr/bin/time -l` on the release build of the CLI (Apple
+/// M1 Pro): a 22 MB header of 2^20 one-byte entries peaks at 95 MB (about
+/// 90 bytes per entry) and a 33.5 MB header of 2^20 scalar tensor infos at
+/// 181 MB (about 170 bytes per tensor). The defaults cap both counts at 2^20.
+/// A realistic header, the 3.24 MB one of the 8B-shaped synthetic model,
+/// peaks at 5.4 MB of heap while parsing (`tests/memory.rs`).
+///
 /// ```
 /// use gguf_inspect::Limits;
 ///
