@@ -1,8 +1,11 @@
 //! Number formatting and aligned plain-text tables.
 
+use std::borrow::Cow;
 use std::io::{self, Write};
 
 use unicode_width::UnicodeWidthStr;
+
+use crate::escape;
 
 /// `1234567` -> `"1,234,567"`.
 pub(crate) fn thousands(n: u64) -> String {
@@ -65,7 +68,9 @@ pub(crate) enum Align {
     Right,
 }
 
-/// Columns separated by two spaces, padded by display width.
+/// Columns separated by two spaces, padded by display width. Every cell is
+/// passed through [`escape::text`], so a cell taken from the file cannot
+/// break the layout or send control sequences to the terminal.
 #[derive(Debug, Default)]
 pub(crate) struct Table {
     header: Option<Vec<String>>,
@@ -107,7 +112,18 @@ impl Table {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.rows.push(cells.into_iter().map(Into::into).collect());
+        self.rows.push(
+            cells
+                .into_iter()
+                .map(|cell| {
+                    let cell: String = cell.into();
+                    match escape::text(&cell) {
+                        Cow::Borrowed(_) => cell,
+                        Cow::Owned(escaped) => escaped,
+                    }
+                })
+                .collect(),
+        );
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -169,6 +185,18 @@ mod tests {
         assert_eq!(percent(1, 0), "-");
         assert_eq!(shape(&[4096, 32]), "[4096, 32]");
         assert_eq!(shape(&[]), "[]");
+    }
+
+    #[test]
+    fn table_cells_cannot_add_rows_or_controls() {
+        let mut t = Table::plain();
+        t.row(["key\nfake.key", "\x1b[2Jv"]);
+        let mut out = Vec::new();
+        t.render(&mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "key\\nfake.key  \\u{1b}[2Jv\n"
+        );
     }
 
     #[test]

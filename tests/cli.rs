@@ -121,12 +121,100 @@ fn fixtures() -> tempfile::TempDir {
     let mut partial = SyntheticModel::tiny().builder().build();
     partial.truncate(partial.len() / 2);
     write("partial.gguf", partial);
+    write("hostile.gguf", hostile().build());
+    write(
+        "hostile-duplicate.gguf",
+        GgufBuilder::new()
+            .kv("dup\x1b[2J", &MetadataValue::U8(1))
+            .kv("dup\x1b[2J", &MetadataValue::U8(2))
+            .build(),
+    );
     write("not-gguf.gguf", b"GGML not a gguf file".to_vec());
     write(
         "big-endian.gguf",
         GgufBuilder::new().endian(gguf_testkit::Endian::Big).build(),
     );
     dir
+}
+
+/// Terminal escape sequences, a forged row, a bidi override and a C1
+/// control in every kind of string the CLI prints.
+const HOSTILE_ARCH: &str = "llama\x1b[31mRED\x1b[0m";
+
+fn hostile() -> GgufBuilder {
+    let arch = |key: &str| format!("{HOSTILE_ARCH}.{key}");
+    GgufBuilder::new()
+        .kv(
+            "general.architecture",
+            &MetadataValue::String(HOSTILE_ARCH.into()),
+        )
+        .kv(
+            "general.name",
+            &MetadataValue::String("evil\x1b]0;pwned-title\x07\x1b[2J".into()),
+        )
+        .kv("evil\x1b[31m.key\nfake.key  u32", &MetadataValue::U32(1))
+        .kv(
+            "tokenizer.chat_template",
+            &MetadataValue::String("{% if message['role'] == 'user' %}\u{202e}cba".into()),
+        )
+        .kv(
+            "general.c1",
+            &MetadataValue::Array(MetadataArray::String(vec!["\u{9b}31m\r".into()])),
+        )
+        .kv(&arch("block_count"), &MetadataValue::U32(1))
+        .kv(&arch("attention.head_count"), &MetadataValue::U32(1))
+        .kv(&arch("attention.key_length"), &MetadataValue::U32(32))
+        .kv(&arch("attention.value_length"), &MetadataValue::U32(32))
+        .tensor("t\x1b[1mBOLD\n", &[8], GgmlType::F32)
+}
+
+/// No control or invisible format characters except the newlines that end lines.
+fn assert_terminal_safe(output: &str) {
+    let unsafe_char = output.chars().find(|&c| {
+        (c.is_control() && c != '\n')
+            || matches!(c, '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+    });
+    assert_eq!(unsafe_char, None, "{output:?}");
+}
+
+#[test]
+fn file_strings_cannot_inject_terminal_sequences() {
+    let dir = fixtures();
+    for (name, args) in [
+        ("hostile_info", &["info", "hostile.gguf"][..]),
+        ("hostile_metadata", &["metadata", "hostile.gguf", "--full"]),
+        ("hostile_tensors", &["tensors", "hostile.gguf"]),
+        (
+            "hostile_kv_cache",
+            &["kv-cache", "hostile.gguf", "--ctx", "16"],
+        ),
+        ("hostile_diff", &["diff", "tiny.gguf", "hostile.gguf"]),
+        (
+            "hostile_metadata_json",
+            &["metadata", "hostile.gguf", "--json"],
+        ),
+    ] {
+        let r = run(dir.path(), args);
+        assert!(r.code == 0 || r.code == 1, "{args:?}: {}", r.stderr);
+        assert_terminal_safe(&r.stdout);
+        assert_terminal_safe(&r.stderr);
+        assert_snapshot!(name, r.stdout);
+    }
+
+    // JSON escapes are standard, so the parsed value is exactly what the file holds.
+    let json = ok(dir.path(), &["metadata", "hostile.gguf", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    assert_eq!(parsed[0]["value"], HOSTILE_ARCH);
+    assert_eq!(parsed[4]["value"][0], "\u{9b}31m\r");
+
+    let r = run(dir.path(), &["info", "hostile-duplicate.gguf"]);
+    assert_eq!(r.code, 2);
+    assert_terminal_safe(&r.stderr);
+    assert_eq!(
+        r.stderr,
+        "gguf-inspect: error: hostile-duplicate.gguf: duplicate metadata key `dup\\u{1b}[2J` \
+         at byte offset 44 (in metadata entry 1)\n"
+    );
 }
 
 #[test]

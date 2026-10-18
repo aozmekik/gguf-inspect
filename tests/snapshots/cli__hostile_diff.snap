@@ -1,0 +1,58 @@
+---
+source: tests/cli.rs
+expression: r.stdout
+---
+--- tiny.gguf
++++ hostile.gguf
+
+metadata: 26 difference(s)
+  ~  general.architecture                                string         "llama" -> "llama\u{1b}[31mRED\u{1b}[0m"
+  ~  general.name                                        string         "Synthetic tiny" -> "evil\u{1b}]0;pwned-title\u{7}\u{1b}[2J"
+  -  general.file_type                                   u32            15
+  -  general.quantization_version                        u32            2
+  -  llama.context_length                                u32            2048
+  -  llama.embedding_length                              u32            256
+  -  llama.block_count                                   u32            2
+  -  llama.feed_forward_length                           u32            512
+  -  llama.attention.head_count                          u32            4
+  -  llama.attention.head_count_kv                       u32            2
+  -  llama.attention.layer_norm_rms_epsilon              f32            1e-5
+  -  llama.rope.dimension_count                          u32            64
+  -  llama.rope.freq_base                                f32            500000.0
+  -  tokenizer.ggml.model                                string         "gpt2"
+  -  tokenizer.ggml.tokens                               array[string]  ["tok_0", "tok_1", "tok_2", "tok_3", "tok_4", "tok_5", "tok_6", "tok_7", ... 504 more]
+  -  tokenizer.ggml.scores                               array[f32]     [0.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, ... 504 more]
+  -  tokenizer.ggml.token_type                           array[i32]     [3, 3, 3, 1, 1, 1, 1, 1, ... 504 more]
+  -  tokenizer.ggml.bos_token_id                         u32            0
+  -  tokenizer.ggml.eos_token_id                         u32            1
+  +  evil\u{1b}[31m.key\nfake.key  u32                   u32            1
+  +  tokenizer.chat_template                             string         "{% if message['role'] == 'user' %}\u{202e}cba"
+  +  general.c1                                          array[string]  ["\u{9b}31m\r"]
+  +  llama\u{1b}[31mRED\u{1b}[0m.block_count             u32            1
+  +  llama\u{1b}[31mRED\u{1b}[0m.attention.head_count    u32            1
+  +  llama\u{1b}[31mRED\u{1b}[0m.attention.key_length    u32            32
+  +  llama\u{1b}[31mRED\u{1b}[0m.attention.value_length  u32            32
+
+tensors: 22 difference(s)
+  -  token_embd.weight         q4_K [256, 512]
+  -  blk.0.attn_norm.weight    f32 [256]
+  -  blk.0.attn_q.weight       q4_K [256, 256]
+  -  blk.0.attn_k.weight       q4_K [256, 128]
+  -  blk.0.attn_v.weight       q8_0 [256, 128]
+  -  blk.0.attn_output.weight  q4_K [256, 256]
+  -  blk.0.ffn_norm.weight     f32 [256]
+  -  blk.0.ffn_gate.weight     q4_K [256, 512]
+  -  blk.0.ffn_up.weight       q4_K [256, 512]
+  -  blk.0.ffn_down.weight     q8_0 [512, 256]
+  -  blk.1.attn_norm.weight    f32 [256]
+  -  blk.1.attn_q.weight       q4_K [256, 256]
+  -  blk.1.attn_k.weight       q4_K [256, 128]
+  -  blk.1.attn_v.weight       q8_0 [256, 128]
+  -  blk.1.attn_output.weight  q4_K [256, 256]
+  -  blk.1.ffn_norm.weight     f32 [256]
+  -  blk.1.ffn_gate.weight     q4_K [256, 512]
+  -  blk.1.ffn_up.weight       q4_K [256, 512]
+  -  blk.1.ffn_down.weight     q8_0 [512, 256]
+  -  output_norm.weight        f32 [256]
+  -  output.weight             q8_0 [256, 512]
+  +  t\u{1b}[1mBOLD\n          f32 [8]

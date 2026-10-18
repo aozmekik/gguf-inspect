@@ -1,0 +1,14 @@
+---
+source: tests/cli.rs
+expression: r.stdout
+---
+KEY                                                 TYPE           VALUE
+general.architecture                                string         "llama\u{1b}[31mRED\u{1b}[0m"
+general.name                                        string         "evil\u{1b}]0;pwned-title\u{7}\u{1b}[2J"
+evil\u{1b}[31m.key\nfake.key  u32                   u32            1
+tokenizer.chat_template                             string         "{% if message['role'] == 'user' %}\u{202e}cba"
+general.c1                                          array[string]  ["\u{9b}31m\r"]
+llama\u{1b}[31mRED\u{1b}[0m.block_count             u32            1
+llama\u{1b}[31mRED\u{1b}[0m.attention.head_count    u32            1
+llama\u{1b}[31mRED\u{1b}[0m.attention.key_length    u32            32
+llama\u{1b}[31mRED\u{1b}[0m.attention.value_length  u32            32

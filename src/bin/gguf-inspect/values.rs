@@ -79,9 +79,7 @@ fn render_string(out: &mut String, s: &str, max_chars: Option<usize>) -> bool {
         _ => s.to_owned(),
     };
     let truncated = shown.len() < s.len();
-    out.push('"');
-    out.push_str(&shown.escape_debug().to_string());
-    out.push('"');
+    crate::escape::push_quoted(out, &shown);
     if truncated {
         push(out, format_args!("... ({} bytes)", s.len()));
     }

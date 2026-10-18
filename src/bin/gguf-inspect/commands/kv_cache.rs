@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use super::write_json;
 use crate::format::{Table, bytes, thousands};
-use crate::{Failure, Outcome, open};
+use crate::{Failure, Outcome, escape, open};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -101,7 +101,12 @@ fn render(
     estimate: &KvCacheEstimate,
 ) -> Result<(), Failure> {
     let arch = model.architecture.as_deref().unwrap_or("?");
-    writeln!(out, "KV cache estimate for {} ({arch})", path.display())?;
+    writeln!(
+        out,
+        "KV cache estimate for {} ({})",
+        escape::text(&path.display().to_string()),
+        escape::text(arch)
+    )?;
     writeln!(out)?;
     inputs(model, estimate).render(out)?;
     writeln!(out)?;
@@ -111,7 +116,7 @@ fn render(
         writeln!(out)?;
         writeln!(out, "notes")?;
         for note in &estimate.notes {
-            writeln!(out, "  - {note}")?;
+            writeln!(out, "  - {}", escape::text(&note.to_string()))?;
         }
     }
     Ok(())

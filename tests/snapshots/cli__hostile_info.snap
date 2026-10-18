@@ -1,0 +1,20 @@
+---
+source: tests/cli.rs
+expression: r.stdout
+---
+file      hostile.gguf
+size      608 B (608 bytes)
+format    GGUF v3, alignment 32, data offset 576
+metadata  9 entries
+tensors   1
+
+architecture  llama\u{1b}[31mRED\u{1b}[0m
+name          evil\u{1b}]0;pwned-title\u{7}\u{1b}[2J
+parameters    8 (8)
+layers        1
+heads         1
+head size     key 32, value 32
+
+quantization
+  TYPE  TENSORS  PARAMETERS  BYTES   SHARE    BPW
+  f32         1           8   32 B  100.0%  32.00

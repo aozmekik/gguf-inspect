@@ -3,6 +3,7 @@
 //! Exit status: 0 on success, 1 when `diff` finds differences, 2 on errors.
 
 mod commands;
+mod escape;
 mod format;
 mod values;
 
@@ -223,6 +224,8 @@ fn main() -> ExitCode {
                 Failure::Output(e) => format!("writing output: {e}"),
                 Failure::Message(m) => m,
             };
+            // Messages can quote keys and tensor names from the file.
+            let message = escape::text(&message);
             // Nothing sensible is left to do if stderr is gone too.
             let _ = writeln!(io::stderr(), "gguf-inspect: error: {message}");
             ExitCode::from(2)

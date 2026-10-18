@@ -10,7 +10,7 @@ use serde_json::Value as Json;
 use super::write_json;
 use crate::format::Table;
 use crate::values::{PREVIEW_ITEMS, Preview, render, to_json, type_name};
-use crate::{Failure, Outcome, open};
+use crate::{Failure, Outcome, escape, open};
 
 #[derive(Serialize)]
 struct EntryJson<'a> {
@@ -68,7 +68,11 @@ pub(crate) fn metadata(
     }
     if table.is_empty() {
         if let Some(prefix) = filter {
-            writeln!(out, "no metadata keys start with `{prefix}`")?;
+            writeln!(
+                out,
+                "no metadata keys start with `{}`",
+                escape::text(prefix)
+            )?;
         } else {
             writeln!(out, "no metadata")?;
         }

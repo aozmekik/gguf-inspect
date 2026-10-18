@@ -11,7 +11,7 @@ use serde_json::Value as Json;
 use super::write_json;
 use crate::format::{Table, shape, thousands};
 use crate::values::{PREVIEW_ITEMS, Preview, render, to_json, type_name};
-use crate::{Failure, Outcome, open};
+use crate::{Failure, Outcome, escape, open};
 
 pub(crate) fn diff(
     a: &Path,
@@ -40,8 +40,8 @@ fn render_text(
     new_path: &Path,
     changes: &FileDiff<'_>,
 ) -> Result<(), Failure> {
-    writeln!(out, "--- {}", old_path.display())?;
-    writeln!(out, "+++ {}", new_path.display())?;
+    writeln!(out, "--- {}", escape::text(&old_path.display().to_string()))?;
+    writeln!(out, "+++ {}", escape::text(&new_path.display().to_string()))?;
     if changes.is_empty() {
         writeln!(out)?;
         writeln!(out, "headers are identical (metadata and tensor infos)")?;

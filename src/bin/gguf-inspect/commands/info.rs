@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use super::write_json;
 use crate::format::{Table, bytes, count, percent, thousands};
-use crate::{Failure, Outcome, open};
+use crate::{Failure, Outcome, escape, open};
 
 pub(crate) fn info(path: &Path, json: bool, out: &mut dyn Write) -> Result<Outcome, Failure> {
     let gguf = open(path)?;
@@ -130,7 +130,7 @@ fn render(
         writeln!(out)?;
         writeln!(out, "warnings")?;
         for w in warnings {
-            writeln!(out, "  - {w}")?;
+            writeln!(out, "  - {}", escape::text(w))?;
         }
     }
     Ok(())

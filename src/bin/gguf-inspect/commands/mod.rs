@@ -19,10 +19,12 @@ pub(crate) use tensors::tensors;
 pub(crate) use types::types;
 
 use crate::Failure;
+use crate::escape::JsonFormatter;
 
-/// Writes `value` as pretty-printed JSON followed by a newline.
+/// Writes `value` as pretty-printed, terminal-safe JSON followed by a newline.
 fn write_json(out: &mut dyn Write, value: &impl Serialize) -> Result<(), Failure> {
-    serde_json::to_writer_pretty(&mut *out, value)?;
+    let mut serializer = serde_json::Serializer::with_formatter(&mut *out, JsonFormatter::new());
+    value.serialize(&mut serializer)?;
     writeln!(out)?;
     Ok(())
 }
