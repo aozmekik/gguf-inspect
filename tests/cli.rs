@@ -505,12 +505,50 @@ fn errors_name_the_file_and_exit_with_2() {
         assert_eq!(r.stdout, "");
         assert_eq!(r.stderr, expected);
     }
-    // OS error text differs between platforms; check the stable part.
+    // OS error text differs between platforms; check the stable part. The
+    // io::Error is the source of the parse error and is printed once.
     let r = run(dir.path(), &["tensors", "missing.gguf"]);
     assert_eq!(r.code, 2);
     assert!(
         r.stderr
-            .starts_with("gguf-inspect: error: missing.gguf: I/O error: ")
+            .starts_with("gguf-inspect: error: missing.gguf: I/O error: "),
+        "{}",
+        r.stderr
+    );
+    assert_eq!(r.stderr.matches("I/O error").count(), 1);
+}
+
+/// A pipe reports length 0; it used to fail as "unexpected end of file".
+#[cfg(unix)]
+#[test]
+fn pipes_and_directories_are_not_regular_files() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let dir = fixtures();
+    let expected = |path: &str| {
+        format!(
+            "gguf-inspect: error: {path}: not a regular file (pipes and devices cannot be read: \
+             declared sizes are checked against the file size)\n"
+        )
+    };
+    let r = run(dir.path(), &["info", "."]);
+    assert_eq!((r.code, r.stderr), (2, expected(".")));
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_gguf-inspect"))
+        .args(["info", "/dev/stdin"])
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("binary runs");
+    let tiny = std::fs::read(dir.path().join("tiny.gguf")).expect("fixture");
+    // The binary may exit before reading everything; a broken pipe is fine.
+    let _ = child.stdin.take().expect("stdin").write_all(&tiny);
+    let output = child.wait_with_output().expect("binary exits");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8"),
+        expected("/dev/stdin")
     );
 }
 

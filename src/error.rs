@@ -30,8 +30,12 @@ pub struct Error {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// Opening or reading the file failed.
+    /// Opening or reading the file failed. The I/O error is the
+    /// [`source`](std::error::Error::source) of the [`Error`].
     Io(io::Error),
+    /// The path is not a regular file. Pipes, sockets and devices cannot be
+    /// parsed because declared sizes are checked against the file size.
+    NotARegularFile,
     /// The file ended in the middle of a fixed-size field.
     UnexpectedEof {
         /// Bytes the field needs.
@@ -96,8 +100,18 @@ pub enum ErrorKind {
     },
     /// A tensor uses a ggml type ID that is unknown or has been removed from ggml.
     UnknownGgmlType(u32),
-    /// A tensor's element count does not fit in `i64`, the type ggml uses for shapes.
-    TensorShapeOverflow(Vec<u64>),
+    /// A tensor dimension does not fit in `i64`, the type ggml uses for shapes.
+    DimensionOverflow(Vec<u64>),
+    /// Multiplying a tensor's dimensions in order exceeds `i64::MAX` at some
+    /// step, which ggml rejects even when a later dimension is 0.
+    ElementCountOverflow(Vec<u64>),
+    /// A tensor's size in bytes does not fit in `u64`.
+    ByteSizeOverflow {
+        /// The tensor's shape.
+        dims: Vec<u64>,
+        /// The tensor's element type.
+        ggml_type: GgmlType,
+    },
     /// A tensor's first dimension is not a whole number of quantization blocks.
     PartialBlock {
         /// The tensor's element type.
@@ -118,6 +132,15 @@ impl Error {
         Self {
             kind,
             offset: Some(offset),
+            context: None,
+        }
+    }
+
+    /// An error that is not about a position in the file.
+    pub(crate) fn without_offset(kind: ErrorKind) -> Self {
+        Self {
+            kind,
+            offset: None,
             context: None,
         }
     }
@@ -151,11 +174,7 @@ impl Error {
 
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Self {
-        Self {
-            kind: ErrorKind::Io(err),
-            offset: None,
-            context: None,
-        }
+        Self::without_offset(ErrorKind::Io(err))
     }
 }
 
@@ -184,7 +203,12 @@ impl std::error::Error for Error {
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(err) => write!(f, "I/O error: {err}"),
+            // The io::Error is the source; reporters print it after this.
+            Self::Io(_) => f.write_str("I/O error"),
+            Self::NotARegularFile => f.write_str(
+                "not a regular file (pipes and devices cannot be read: declared sizes are \
+                 checked against the file size)",
+            ),
             Self::UnexpectedEof { needed, available } => write!(
                 f,
                 "unexpected end of file: needed {needed} bytes but only {available} remain"
@@ -233,9 +257,17 @@ impl fmt::Display for ErrorKind {
                 write!(f, "ggml type {id} has been removed from ggml")
             }
             Self::UnknownGgmlType(id) => write!(f, "unknown ggml type {id}"),
-            Self::TensorShapeOverflow(dims) => {
-                write!(f, "tensor shape {dims:?} has more than i64::MAX elements")
+            Self::DimensionOverflow(dims) => {
+                write!(f, "tensor shape {dims:?} has a dimension above i64::MAX")
             }
+            Self::ElementCountOverflow(dims) => write!(
+                f,
+                "tensor shape {dims:?} overflows i64 when its dimensions are multiplied"
+            ),
+            Self::ByteSizeOverflow { dims, ggml_type } => write!(
+                f,
+                "tensor shape {dims:?} of type {ggml_type} needs more than u64::MAX bytes"
+            ),
             Self::PartialBlock { ggml_type, ne0 } => write!(
                 f,
                 "first dimension {ne0} is not a multiple of the {ggml_type} block size {}",
@@ -267,11 +299,14 @@ mod tests {
     }
 
     #[test]
-    fn io_errors_expose_their_source() {
+    fn io_errors_expose_their_source_without_repeating_it() {
         let err = Error::from(io::Error::other("boom"));
         assert_eq!(err.offset(), None);
-        assert!(std::error::Error::source(&err).is_some());
-        assert_eq!(err.to_string(), "I/O error: boom");
+        assert_eq!(err.to_string(), "I/O error");
+        let source = std::error::Error::source(&err).expect("the io::Error");
+        assert_eq!(source.to_string(), "boom");
+        let non_io = Error::new(ErrorKind::EmptyKey, 0);
+        assert!(std::error::Error::source(&non_io).is_none());
     }
 
     #[test]
@@ -337,21 +372,6 @@ mod tests {
                 "duplicate tensor name `t`",
             ),
             (
-                ErrorKind::TooManyDimensions { n_dims: 5, max: 4 },
-                "tensor has 5 dimensions (at most 4 allowed)",
-            ),
-            (
-                ErrorKind::TensorShapeOverflow(vec![1, 2]),
-                "tensor shape [1, 2] has more than i64::MAX elements",
-            ),
-            (
-                ErrorKind::PartialBlock {
-                    ggml_type: GgmlType::Q4_K,
-                    ne0: 100,
-                },
-                "first dimension 100 is not a multiple of the q4_K block size 256",
-            ),
-            (
                 ErrorKind::AlignmentType(ValueType::U64),
                 "general.alignment must be a u32, found u64",
             ),
@@ -362,6 +382,47 @@ mod tests {
             (
                 ErrorKind::OffsetOverflow,
                 "tensor data offset overflows u64",
+            ),
+        ];
+        for (kind, expected) in cases {
+            assert_eq!(kind.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn every_tensor_kind_has_a_message() {
+        let cases: Vec<(ErrorKind, &str)> = vec![
+            (
+                ErrorKind::TooManyDimensions { n_dims: 5, max: 4 },
+                "tensor has 5 dimensions (at most 4 allowed)",
+            ),
+            (
+                ErrorKind::DimensionOverflow(vec![u64::MAX]),
+                "tensor shape [18446744073709551615] has a dimension above i64::MAX",
+            ),
+            (
+                ErrorKind::ElementCountOverflow(vec![1 << 32, 1 << 32]),
+                "tensor shape [4294967296, 4294967296] overflows i64 when its dimensions are \
+                 multiplied",
+            ),
+            (
+                ErrorKind::ByteSizeOverflow {
+                    dims: vec![1 << 62],
+                    ggml_type: GgmlType::F64,
+                },
+                "tensor shape [4611686018427387904] of type f64 needs more than u64::MAX bytes",
+            ),
+            (
+                ErrorKind::NotARegularFile,
+                "not a regular file (pipes and devices cannot be read: declared sizes are \
+                 checked against the file size)",
+            ),
+            (
+                ErrorKind::PartialBlock {
+                    ggml_type: GgmlType::Q4_K,
+                    ne0: 100,
+                },
+                "first dimension 100 is not a multiple of the q4_K block size 256",
             ),
         ];
         for (kind, expected) in cases {

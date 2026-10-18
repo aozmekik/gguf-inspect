@@ -265,13 +265,13 @@ fn invalid_utf8() {
     assert!(matches!(err.kind(), ErrorKind::InvalidUtf8));
     assert_eq!(err.offset(), Some(32));
 
-    let mut payload = 2_u64.to_le_bytes().to_vec();
-    payload.extend_from_slice(&[0xc3, 0x28]);
+    // The offset points at the first invalid byte, after the valid prefix.
+    let mut payload = 4_u64.to_le_bytes().to_vec();
+    payload.extend_from_slice(b"ab\xc3\x28");
     let bytes = GgufBuilder::new().raw_kv(b"k", typed(8, &payload)).build();
-    assert!(matches!(
-        parse(&bytes).unwrap_err().kind(),
-        ErrorKind::InvalidUtf8
-    ));
+    let err = parse(&bytes).unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::InvalidUtf8));
+    assert_eq!(err.offset(), Some(24 + 8 + 1 + 4 + 8 + 2));
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn tensor_errors() {
 
     let (bytes, at) = one_tensor(spec("t", vec![1 << 40, 1 << 40], GgmlType::F32.id()));
     let err = parse(&bytes).unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::TensorShapeOverflow(_)));
+    assert!(matches!(err.kind(), ErrorKind::ElementCountOverflow(_)));
     assert_eq!(err.offset(), Some(at + 13));
 
     let (bytes, _) = one_tensor(spec("t", vec![100], GgmlType::Q4_K.id()));

@@ -21,9 +21,11 @@ pub struct TensorInfo {
 }
 
 impl TensorInfo {
-    /// Validates a shape the way ggml does: every dimension and the element
-    /// count must fit in `i64`, and the first dimension must be a whole number
-    /// of quantization blocks.
+    /// Validates a shape the way ggml's `gguf.cpp` does: every dimension
+    /// must fit in `i64`, multiplying the dimensions in order must never
+    /// exceed `i64::MAX` (so `[2^31, 2^32, 0]` is rejected although it has
+    /// no elements), the first dimension must be a whole number of
+    /// quantization blocks, and the byte size must fit in `u64`.
     pub(crate) fn new(
         name: String,
         dims: Vec<u64>,
@@ -31,12 +33,14 @@ impl TensorInfo {
         offset: u64,
     ) -> Result<Self, ErrorKind> {
         const MAX: u64 = i64::MAX.unsigned_abs();
+        if dims.iter().any(|&d| d > MAX) {
+            return Err(ErrorKind::DimensionOverflow(dims));
+        }
         let n_elements = dims
             .iter()
-            .try_fold(1_u64, |acc, &d| acc.checked_mul(d))
-            .filter(|&n| n <= MAX && dims.iter().all(|&d| d <= MAX));
+            .try_fold(1_u64, |acc, &d| acc.checked_mul(d).filter(|&n| n <= MAX));
         let Some(n_elements) = n_elements else {
-            return Err(ErrorKind::TensorShapeOverflow(dims));
+            return Err(ErrorKind::ElementCountOverflow(dims));
         };
         // A zero-dimensional tensor is a scalar: one element, ne0 = 1.
         let ne0 = dims.first().copied().unwrap_or(1);
@@ -44,9 +48,11 @@ impl TensorInfo {
             return Err(ErrorKind::PartialBlock { ggml_type, ne0 });
         }
         // n_elements is a multiple of ne0, hence of the block size.
-        let n_bytes = (n_elements / ggml_type.block_size())
-            .checked_mul(ggml_type.type_size())
-            .ok_or_else(|| ErrorKind::TensorShapeOverflow(dims.clone()))?;
+        let Some(n_bytes) =
+            (n_elements / ggml_type.block_size()).checked_mul(ggml_type.type_size())
+        else {
+            return Err(ErrorKind::ByteSizeOverflow { dims, ggml_type });
+        };
         Ok(Self {
             name,
             dims,
@@ -130,20 +136,30 @@ mod tests {
 
     #[test]
     fn rejects_overflowing_shapes() {
-        for dims in [
-            vec![u64::MAX],
-            vec![1 << 32, 1 << 32],
-            vec![i64::MAX.unsigned_abs() + 1, 0],
-        ] {
+        let check = |dims: Vec<u64>, ty: GgmlType| TensorInfo::new("x".into(), dims, ty, 0);
+        let big = i64::MAX.unsigned_abs() + 1;
+        for dims in [vec![u64::MAX], vec![big, 0], vec![0, big]] {
             assert!(matches!(
-                TensorInfo::new("x".into(), dims, GgmlType::F32, 0),
-                Err(ErrorKind::TensorShapeOverflow(_))
+                check(dims, GgmlType::F32),
+                Err(ErrorKind::DimensionOverflow(_))
             ));
         }
+        for dims in [vec![1 << 32, 1 << 32], vec![1 << 31, 1 << 32, 0]] {
+            assert!(matches!(
+                check(dims, GgmlType::F32),
+                Err(ErrorKind::ElementCountOverflow(_))
+            ));
+        }
+        // A zero early on keeps the running product at 0, as in ggml.
+        let empty = check(vec![0, 1 << 40, 1 << 40], GgmlType::F32).unwrap();
+        assert_eq!(empty.n_elements(), 0);
         // Fits in i64 as elements but not as bytes.
         assert!(matches!(
-            TensorInfo::new("x".into(), vec![1 << 62], GgmlType::F64, 0),
-            Err(ErrorKind::TensorShapeOverflow(_))
+            check(vec![1 << 62], GgmlType::F64),
+            Err(ErrorKind::ByteSizeOverflow {
+                ggml_type: GgmlType::F64,
+                ..
+            })
         ));
     }
 

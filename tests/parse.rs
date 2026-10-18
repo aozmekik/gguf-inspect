@@ -182,6 +182,18 @@ fn reads_from_disk_and_stops_at_the_header() {
     assert_eq!(gguf.validate(), []);
 }
 
+#[cfg(unix)]
+#[test]
+fn directories_are_not_regular_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = GgufFile::open(dir.path()).unwrap_err();
+    assert!(matches!(
+        err.kind(),
+        gguf_inspect::ErrorKind::NotARegularFile
+    ));
+    assert_eq!(err.offset(), None);
+}
+
 #[test]
 fn validate_reports_data_section_problems() {
     let spec = |name: &str, offset| TensorSpec {

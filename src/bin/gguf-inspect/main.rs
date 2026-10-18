@@ -7,7 +7,7 @@ mod escape;
 mod format;
 mod values;
 
-use std::fmt;
+use std::fmt::Write as _;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -164,8 +164,17 @@ pub(crate) enum Failure {
 }
 
 impl Failure {
-    pub(crate) fn with_path(path: &Path, err: impl fmt::Display) -> Self {
-        Self::Message(format!("{}: {err}", path.display()))
+    /// A failure naming `path`, with `err` and its chain of sources joined
+    /// by `: ` (an I/O error is the source of the parse error, not part of
+    /// its message).
+    pub(crate) fn with_path(path: &Path, err: &dyn std::error::Error) -> Self {
+        let mut message = format!("{}: {err}", path.display());
+        let mut source = err.source();
+        while let Some(cause) = source {
+            let _ = write!(message, ": {cause}");
+            source = cause.source();
+        }
+        Self::Message(message)
     }
 }
 
@@ -190,7 +199,7 @@ pub(crate) enum Outcome {
 
 /// Opens `path`, turning parse errors into messages that name the file.
 pub(crate) fn open(path: &Path) -> Result<gguf_inspect::GgufFile, Failure> {
-    gguf_inspect::GgufFile::open(path).map_err(|e| Failure::with_path(path, e))
+    gguf_inspect::GgufFile::open(path).map_err(|e| Failure::with_path(path, &e))
 }
 
 fn run(cli: Cli, out: &mut dyn Write) -> Result<Outcome, Failure> {

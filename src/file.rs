@@ -105,10 +105,16 @@ impl GgufFile {
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be read or its header is malformed.
+    /// Returns an error if the file cannot be read, is not a regular file
+    /// ([`ErrorKind::NotARegularFile`]), or its header is malformed.
     pub fn open_with_limits(path: impl AsRef<Path>, limits: &Limits) -> Result<Self> {
         let file = File::open(path)?;
-        let len = file.metadata()?.len();
+        let metadata = file.metadata()?;
+        // A pipe reports length 0, which would read as a truncated file.
+        if !metadata.is_file() {
+            return Err(Error::without_offset(ErrorKind::NotARegularFile));
+        }
+        let len = metadata.len();
         Self::from_reader(
             BufReader::with_capacity(READ_BUFFER_BYTES, file),
             len,

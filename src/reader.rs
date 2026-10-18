@@ -126,7 +126,10 @@ impl<R: Read> Reader<R> {
         let n = self.check_count(what, len, 1, at)?;
         let mut buf = vec![0; n];
         self.fill(&mut buf)?;
-        String::from_utf8(buf).map_err(|_| Error::new(ErrorKind::InvalidUtf8, at + 8))
+        String::from_utf8(buf).map_err(|e| {
+            let valid = e.utf8_error().valid_up_to() as u64;
+            Error::new(ErrorKind::InvalidUtf8, at + 8 + valid)
+        })
     }
 
     /// Reads `n` fixed-width values. The caller must have validated `n` with
@@ -236,12 +239,18 @@ mod tests {
     }
 
     #[test]
-    fn invalid_utf8_points_at_the_string_bytes() {
-        let mut bytes = 2_u64.to_le_bytes().to_vec();
-        bytes.extend_from_slice(&[0xc3, 0x28]);
-        let err = reader(&bytes).string("s", 10).unwrap_err();
-        assert!(matches!(err.kind(), ErrorKind::InvalidUtf8));
-        assert_eq!(err.offset(), Some(8));
+    fn invalid_utf8_points_at_the_first_bad_byte() {
+        let string = |text: &[u8]| {
+            let mut bytes = (text.len() as u64).to_le_bytes().to_vec();
+            bytes.extend_from_slice(text);
+            reader(&bytes).string("s", 10)
+        };
+        for (text, bad_at) in [(&b"\xc3\x28"[..], 0), (b"ok \xff", 3), (b"\xc3\xa9\xe2", 2)] {
+            let err = string(text).unwrap_err();
+            assert!(matches!(err.kind(), ErrorKind::InvalidUtf8));
+            assert_eq!(err.offset(), Some(8 + bad_at), "{text:?}");
+        }
+        assert_eq!(string("é\u{1}".as_bytes()).unwrap(), "é\u{1}");
     }
 
     #[test]
