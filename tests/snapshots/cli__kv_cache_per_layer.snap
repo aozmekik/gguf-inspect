@@ -6,21 +6,21 @@ KV cache estimate for hybrid.gguf (hybrid)
 
   block_count    4
   head_count     16
-  head_count_kv  0-4 across 4 layers
-  key_length     64                   embedding_length 1024 / head_count 16
-  value_length   64                   embedding_length 1024 / head_count 16
-  cache type     f16                  2 bytes per element
-  context        8,192                tokens
-  batch          1                    sequence
+  head_count_kv  0-4 (4 per-layer entries)  KV heads in 2 of 4 layers
+  key_length     64                         embedding_length 1024 / head_count 16
+  value_length   64                         embedding_length 1024 / head_count 16
+  cache type     f16                        2 bytes per element
+  context        8,192                      tokens per sequence
+  sequences      1
 
 formula
   K per token = sum over layers of row_size(f16, head_count_kv[layer] x 64) = 1,024 B
   V per token = sum over layers of row_size(f16, head_count_kv[layer] x 64) = 1,024 B
-  total = batch x ctx x (K + V)
+  total = sequences x ctx x (K + V)
         = 1 x 8,192 x 2,048 B
         = 16,777,216 B (16.00 MiB)
 
 notes
   - sliding-window attention (window 512): runtimes may cache fewer tokens for those layers; this is an upper bound
   - recurrent (SSM) state is not included
-  - 2 layer(s) have no KV heads
+  - 2 layers have no KV heads

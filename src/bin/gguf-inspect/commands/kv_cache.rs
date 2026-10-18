@@ -3,27 +3,35 @@
 use std::io::Write;
 use std::path::Path;
 
-use gguf_inspect::kv_cache::{HeadDimSource, KvCacheConfig, KvCacheEstimate, estimate};
-use gguf_inspect::model::PerLayer;
+use gguf_inspect::kv_cache::{
+    HeadDimSource, KvCacheConfig, KvCacheEstimate, KvCacheNote, estimate,
+};
 use gguf_inspect::{GgmlType, ModelInfo};
 use serde::Serialize;
 
-use super::write_json;
-use crate::format::{Table, bytes, thousands};
+use super::{PerLayerJson, write_json};
+use crate::format::{Table, attention, bytes, thousands};
 use crate::{Failure, Outcome, escape, open};
 
 #[derive(Serialize)]
-#[serde(untagged)]
-enum Heads<'a> {
-    Uniform(u64),
-    PerLayer(&'a [u64]),
+struct NoteJson {
+    kind: &'static str,
+    message: String,
 }
 
-impl<'a> From<&'a PerLayer> for Heads<'a> {
-    fn from(p: &'a PerLayer) -> Self {
-        match p {
-            PerLayer::Uniform(v) => Self::Uniform(*v),
-            PerLayer::Varying(v) => Self::PerLayer(v),
+impl From<&KvCacheNote> for NoteJson {
+    fn from(note: &KvCacheNote) -> Self {
+        let kind = match note {
+            KvCacheNote::SlidingWindow(_) => "sliding_window",
+            KvCacheNote::LatentAttention { .. } => "latent_attention",
+            KvCacheNote::UncompressedLatentAttention(_) => "uncompressed_latent_attention",
+            KvCacheNote::RecurrentState => "recurrent_state",
+            KvCacheNote::LayersWithoutKv(_) => "layers_without_kv",
+            _ => "other",
+        };
+        Self {
+            kind,
+            message: note.to_string(),
         }
     }
 }
@@ -32,35 +40,36 @@ impl<'a> From<&'a PerLayer> for Heads<'a> {
 struct KvJson<'a> {
     file: String,
     architecture: Option<&'a str>,
-    context_length: u64,
-    batch: u64,
+    tokens_per_sequence: u64,
+    sequences: u64,
     cache_type: &'static str,
     block_count: u64,
-    head_count: Option<Heads<'a>>,
-    head_count_kv: Heads<'a>,
+    head_count: Option<PerLayerJson<'a>>,
+    head_count_kv: PerLayerJson<'a>,
     key_length: u64,
     value_length: u64,
     head_dim_source: &'static str,
+    value_cache: bool,
     k_bytes_per_token: u64,
     v_bytes_per_token: u64,
     bytes_per_token: u64,
     total_bytes: u64,
-    notes: Vec<String>,
+    notes: Vec<NoteJson>,
 }
 
 pub(crate) fn kv_cache(
     path: &Path,
     ctx: u64,
     cache_type: GgmlType,
-    batch: u64,
+    sequences: u64,
     json: bool,
     out: &mut dyn Write,
 ) -> Result<Outcome, Failure> {
     let gguf = open(path)?;
     let config = KvCacheConfig::new(ctx)
         .with_cache_type(cache_type)
-        .with_sequences(batch);
-    let e = estimate(&gguf, &config).map_err(|err| Failure::with_path(path, err))?;
+        .with_sequences(sequences);
+    let e = estimate(&gguf, &config).map_err(|err| Failure::with_path(path, &err))?;
     let model = ModelInfo::from_file(&gguf);
 
     if json {
@@ -69,8 +78,8 @@ pub(crate) fn kv_cache(
             &KvJson {
                 file: path.display().to_string(),
                 architecture: model.architecture.as_deref(),
-                context_length: ctx,
-                batch,
+                tokens_per_sequence: ctx,
+                sequences,
                 cache_type: cache_type.name(),
                 block_count: e.block_count,
                 head_count: e.head_count.as_ref().map(Into::into),
@@ -80,12 +89,15 @@ pub(crate) fn kv_cache(
                 head_dim_source: match e.head_dim_source {
                     HeadDimSource::Explicit => "explicit",
                     HeadDimSource::Derived => "derived",
+                    HeadDimSource::Unused => "unused",
+                    _ => "other",
                 },
+                value_cache: e.has_value_cache,
                 k_bytes_per_token: e.k_bytes_per_token,
                 v_bytes_per_token: e.v_bytes_per_token,
                 bytes_per_token: e.bytes_per_token(),
                 total_bytes: e.total_bytes,
-                notes: e.notes.iter().map(ToString::to_string).collect(),
+                notes: e.notes.iter().map(Into::into).collect(),
             },
         )?;
         return Ok(Outcome::Ok);
@@ -125,24 +137,13 @@ fn render(
 /// The hyperparameters that enter the formula, with where they came from.
 fn inputs(model: &ModelInfo, e: &KvCacheEstimate) -> Table {
     let arch = model.architecture.as_deref().unwrap_or("?");
-    let source = |explicit: Option<u64>, key: &str| match (
-        explicit,
-        model.embedding_length,
-        &model.head_count,
-    ) {
-        (Some(_), ..) => format!("from {arch}.{key}"),
-        (None, Some(embd), Some(heads)) => format!("embedding_length {embd} / head_count {heads}"),
-        _ => "derived".to_owned(),
-    };
-    let gqa = match (
-        e.head_count_kv.uniform(),
-        e.head_count.as_ref().and_then(PerLayer::uniform),
-    ) {
-        (Some(k), Some(h)) if k > 0 && k < h && h % k == 0 => {
-            format!("grouped-query attention, {} heads per KV head", h / k)
-        }
-        (Some(k), Some(h)) if k == h => "one KV head per head".to_owned(),
-        _ => String::new(),
+    let source = |explicit: Option<u64>, key: &str| match (explicit, e.head_dim_source) {
+        (Some(_), _) => format!("from {arch}.{key}"),
+        (None, HeadDimSource::Unused) => "unused: no layer has KV heads".to_owned(),
+        (None, _) => match (model.embedding_length, &model.head_count) {
+            (Some(embd), Some(heads)) => format!("embedding_length {embd} / head_count {heads}"),
+            _ => "derived".to_owned(),
+        },
     };
     let ty = e.config.cache_type;
     let layout = if ty.block_size() == 1 {
@@ -150,13 +151,21 @@ fn inputs(model: &ModelInfo, e: &KvCacheEstimate) -> Table {
     } else {
         format!("{} bytes per {} elements", ty.type_size(), ty.block_size())
     };
+    let mut value_source = source(model.value_length, "attention.value_length");
+    if !e.has_value_cache {
+        value_source.push_str("; not cached (multi-head latent attention)");
+    }
 
     let mut table = Table::plain().indent(2);
     table.row(["block_count", &e.block_count.to_string(), ""]);
     if let Some(h) = &e.head_count {
         table.row(["head_count", &h.to_string(), ""]);
     }
-    table.row(["head_count_kv".to_owned(), e.head_count_kv.to_string(), gqa]);
+    table.row([
+        "head_count_kv".to_owned(),
+        e.head_count_kv.to_string(),
+        attention(&e.head_count_kv, e.head_count.as_ref()).unwrap_or_default(),
+    ]);
     table.row([
         "key_length".to_owned(),
         e.key_length.to_string(),
@@ -165,16 +174,15 @@ fn inputs(model: &ModelInfo, e: &KvCacheEstimate) -> Table {
     table.row([
         "value_length".to_owned(),
         e.value_length.to_string(),
-        source(model.value_length, "attention.value_length"),
+        value_source,
     ]);
     table.row(["cache type".to_owned(), ty.name().to_owned(), layout]);
-    table.row(["context", &thousands(e.config.context_length), "tokens"]);
-    let sequences = if e.config.sequences == 1 {
-        "sequence"
-    } else {
-        "sequences"
-    };
-    table.row(["batch", &thousands(e.config.sequences), sequences]);
+    table.row([
+        "context",
+        &thousands(e.config.context_length),
+        "tokens per sequence",
+    ]);
+    table.row(["sequences", &thousands(e.config.sequences), ""]);
     table
 }
 
@@ -182,50 +190,95 @@ fn inputs(model: &ModelInfo, e: &KvCacheEstimate) -> Table {
 fn formula(out: &mut dyn Write, e: &KvCacheEstimate) -> Result<(), Failure> {
     let ty = e.config.cache_type;
     let ctx = thousands(e.config.context_length);
-    let batch = thousands(e.config.sequences);
+    let sequences = thousands(e.config.sequences);
     if let Some(kv) = e.head_count_kv.uniform() {
-        let layers = e.block_count.max(1);
-        let row = |dim: u64, bytes_per_layer: u64| {
-            format!(
-                "row_size({ty}, {kv} x {dim} = {}) = {} B",
-                thousands(kv * dim),
-                thousands(bytes_per_layer)
+        // The estimate has checked that these rows are whole blocks and fit.
+        let row = |dim: u64| {
+            let elements = kv.saturating_mul(dim);
+            let row_bytes = ty.row_size(elements).unwrap_or_default();
+            (
+                format!(
+                    "row_size({ty}, {kv} x {dim} = {}) = {} B",
+                    thousands(elements),
+                    thousands(row_bytes)
+                ),
+                row_bytes,
             )
         };
-        let k = row(e.key_length, e.k_bytes_per_token / layers);
-        let v = row(e.value_length, e.v_bytes_per_token / layers);
+        let (k, k_bytes) = row(e.key_length);
         writeln!(out, "  K per layer and token = {k}")?;
-        writeln!(out, "  V per layer and token = {v}")?;
-        writeln!(out, "  total = batch x ctx x block_count x (K + V)")?;
-        writeln!(
-            out,
-            "        = {batch} x {ctx} x {} x {} B",
-            e.block_count,
-            thousands(e.bytes_per_token() / layers)
-        )?;
-    } else {
-        for (name, dim, bytes) in [
-            ("K", e.key_length, e.k_bytes_per_token),
-            ("V", e.value_length, e.v_bytes_per_token),
-        ] {
+        let v_bytes = if e.has_value_cache {
+            let (v, v_bytes) = row(e.value_length);
+            writeln!(out, "  V per layer and token = {v}")?;
+            v_bytes
+        } else {
             writeln!(
                 out,
-                "  {name} per token = sum over layers of row_size({ty}, head_count_kv[layer] x {dim}) = {} B",
-                thousands(bytes)
+                "  V per layer and token = 0 B (no V cache with multi-head latent attention)"
             )?;
-        }
-        writeln!(out, "  total = batch x ctx x (K + V)")?;
+            0
+        };
+        writeln!(out, "  total = sequences x ctx x block_count x (K + V)")?;
         writeln!(
             out,
-            "        = {batch} x {ctx} x {} B",
+            "        = {sequences} x {ctx} x {} x {} B",
+            thousands(e.block_count),
+            thousands(k_bytes.saturating_add(v_bytes))
+        )?;
+    } else {
+        writeln!(
+            out,
+            "  K per token = sum over layers of row_size({ty}, head_count_kv[layer] x {}) = {} B",
+            e.key_length,
+            thousands(e.k_bytes_per_token)
+        )?;
+        if e.has_value_cache {
+            writeln!(
+                out,
+                "  V per token = sum over layers of row_size({ty}, head_count_kv[layer] x {}) = {} B",
+                e.value_length,
+                thousands(e.v_bytes_per_token)
+            )?;
+        } else {
+            writeln!(
+                out,
+                "  V per token = 0 B (no V cache with multi-head latent attention)"
+            )?;
+        }
+        writeln!(out, "  total = sequences x ctx x (K + V)")?;
+        writeln!(
+            out,
+            "        = {sequences} x {ctx} x {} B",
             thousands(e.bytes_per_token())
         )?;
     }
-    writeln!(
-        out,
-        "        = {} B ({})",
-        thousands(e.total_bytes),
-        bytes(e.total_bytes)
-    )?;
+    let total = thousands(e.total_bytes);
+    if e.total_bytes < 1024 {
+        writeln!(out, "        = {total} B")?;
+    } else {
+        writeln!(out, "        = {total} B ({})", bytes(e.total_bytes))?;
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_note_has_a_kind() {
+        let notes = [
+            KvCacheNote::SlidingWindow(1),
+            KvCacheNote::LatentAttention {
+                key_length_mla: 1,
+                value_length_mla: 1,
+            },
+            KvCacheNote::UncompressedLatentAttention(1),
+            KvCacheNote::RecurrentState,
+            KvCacheNote::LayersWithoutKv(1),
+        ];
+        for note in &notes {
+            assert_ne!(NoteJson::from(note).kind, "other", "{note}");
+        }
+    }
 }

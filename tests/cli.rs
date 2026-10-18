@@ -96,21 +96,9 @@ fn fixtures() -> tempfile::TempDir {
         .tensor("added.weight", &[32], GgmlType::F32);
     write("every-type-edited.gguf", edited.build());
 
-    let hybrid = GgufBuilder::new()
-        .kv(
-            "general.architecture",
-            &MetadataValue::String("hybrid".into()),
-        )
-        .kv("hybrid.block_count", &MetadataValue::U32(4))
-        .kv("hybrid.embedding_length", &MetadataValue::U32(1024))
-        .kv("hybrid.attention.head_count", &MetadataValue::U32(16))
-        .kv(
-            "hybrid.attention.head_count_kv",
-            &MetadataValue::Array(MetadataArray::U32(vec![0, 4, 0, 4])),
-        )
-        .kv("hybrid.attention.sliding_window", &MetadataValue::U32(512))
-        .kv("hybrid.ssm.state_size", &MetadataValue::U32(16));
-    write("hybrid.gguf", hybrid.build());
+    for (name, builder) in attention_variants() {
+        write(name, builder.build());
+    }
 
     // Header 24 bytes, key 8 + 12, type 4, string length at 48, text at 56..65.
     let mut truncated = GgufBuilder::new()
@@ -135,6 +123,61 @@ fn fixtures() -> tempfile::TempDir {
         GgufBuilder::new().endian(gguf_testkit::Endian::Big).build(),
     );
     dir
+}
+
+/// Models whose KV cache is not plain grouped-query attention: hybrid
+/// per-layer KV heads, DeepSeek-V3-shaped multi-head latent attention and a
+/// Mamba-style recurrent model, laid out as llama.cpp's converters write them.
+fn attention_variants() -> Vec<(&'static str, GgufBuilder)> {
+    let hybrid = GgufBuilder::new()
+        .kv(
+            "general.architecture",
+            &MetadataValue::String("hybrid".into()),
+        )
+        .kv("hybrid.block_count", &MetadataValue::U32(4))
+        .kv("hybrid.embedding_length", &MetadataValue::U32(1024))
+        .kv("hybrid.attention.head_count", &MetadataValue::U32(16))
+        .kv(
+            "hybrid.attention.head_count_kv",
+            &MetadataValue::Array(MetadataArray::U32(vec![0, 4, 0, 4])),
+        )
+        .kv("hybrid.attention.sliding_window", &MetadataValue::U32(512))
+        .kv("hybrid.ssm.state_size", &MetadataValue::U32(16));
+
+    let u32_entries = |arch: &str, entries: &[(&str, u32)]| {
+        entries.iter().fold(
+            GgufBuilder::new().kv("general.architecture", &MetadataValue::String(arch.into())),
+            |b, (k, v)| b.kv(&format!("{arch}.{k}"), &MetadataValue::U32(*v)),
+        )
+    };
+    let deepseek = u32_entries(
+        "deepseek2",
+        &[
+            ("block_count", 61),
+            ("embedding_length", 7168),
+            ("attention.head_count", 128),
+            ("attention.head_count_kv", 1),
+            ("attention.key_length", 576),
+            ("attention.value_length", 512),
+            ("attention.key_length_mla", 192),
+            ("attention.value_length_mla", 128),
+            ("attention.kv_lora_rank", 512),
+        ],
+    );
+    let mamba = u32_entries(
+        "mamba",
+        &[
+            ("block_count", 64),
+            ("embedding_length", 2560),
+            ("attention.head_count", 0),
+            ("ssm.state_size", 16),
+        ],
+    );
+    vec![
+        ("hybrid.gguf", hybrid),
+        ("deepseek.gguf", deepseek),
+        ("mamba.gguf", mamba),
+    ]
 }
 
 /// Terminal escape sequences, a forged row, a bidi override and a C1
@@ -317,8 +360,22 @@ fn kv_cache() {
         "kv_cache_f16",
         ok(dir.path(), &["kv-cache", "tiny.gguf", "--ctx", "2048"])
     );
-    assert_snapshot!(
-        "kv_cache_q8_0_batch",
+    let sequences = ok(
+        dir.path(),
+        &[
+            "kv-cache",
+            "tiny.gguf",
+            "--ctx",
+            "4096",
+            "--cache-type",
+            "q8_0",
+            "--sequences",
+            "4",
+        ],
+    );
+    assert_snapshot!("kv_cache_q8_0_sequences", sequences);
+    // llama.cpp users know the flag as --parallel (-np).
+    assert_eq!(
         ok(
             dir.path(),
             &[
@@ -328,10 +385,11 @@ fn kv_cache() {
                 "4096",
                 "--cache-type",
                 "q8_0",
-                "--batch",
-                "4"
-            ]
-        )
+                "--parallel",
+                "4",
+            ],
+        ),
+        sequences
     );
     assert_snapshot!(
         "kv_cache_json",
@@ -343,6 +401,14 @@ fn kv_cache() {
     assert_snapshot!(
         "kv_cache_per_layer",
         ok(dir.path(), &["kv-cache", "hybrid.gguf", "--ctx", "8192"])
+    );
+    assert_snapshot!(
+        "kv_cache_latent_attention",
+        ok(dir.path(), &["kv-cache", "deepseek.gguf", "--ctx", "8192"])
+    );
+    assert_snapshot!(
+        "kv_cache_recurrent",
+        ok(dir.path(), &["kv-cache", "mamba.gguf", "--ctx", "8192"])
     );
 }
 

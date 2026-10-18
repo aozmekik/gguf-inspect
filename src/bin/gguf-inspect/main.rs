@@ -63,15 +63,23 @@ enum Command {
     KvCache {
         /// GGUF file to read.
         file: PathBuf,
-        /// Tokens per sequence.
+        /// Tokens cached per sequence.
         #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
         ctx: u64,
         /// Storage type of cached keys and values.
         #[arg(long, value_enum, default_value_t = CacheType::F16)]
         cache_type: CacheType,
-        /// Sequences cached at once, each holding --ctx tokens.
-        #[arg(long, value_name = "N", default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
-        batch: u64,
+        /// Sequences cached at once, each holding --ctx tokens. llama.cpp's
+        /// -c is the total for all -np sequences: `-c 8192 -np 4` is
+        /// `--ctx 2048 --sequences 4`.
+        #[arg(
+            long,
+            visible_alias = "parallel",
+            value_name = "N",
+            default_value_t = 1,
+            value_parser = clap::value_parser!(u64).range(1..)
+        )]
+        sequences: u64,
         /// Print JSON instead of text.
         #[arg(long)]
         json: bool,
@@ -199,9 +207,9 @@ fn run(cli: Cli, out: &mut dyn Write) -> Result<Outcome, Failure> {
             file,
             ctx,
             cache_type,
-            batch,
+            sequences,
             json,
-        } => commands::kv_cache(&file, ctx, cache_type.ggml(), batch, json, out),
+        } => commands::kv_cache(&file, ctx, cache_type.ggml(), sequences, json, out),
         Command::Diff { a, b, json } => commands::diff(&a, &b, json, out),
         Command::Types { json } => commands::types(json, out),
     }

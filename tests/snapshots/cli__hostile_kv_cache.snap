@@ -6,16 +6,16 @@ KV cache estimate for hostile.gguf (llama\u{1b}[31mRED\u{1b}[0m)
 
   block_count    1
   head_count     1
-  head_count_kv  1    one KV head per head
+  head_count_kv  1    multi-head attention
   key_length     32   from llama\u{1b}[31mRED\u{1b}[0m.attention.key_length
   value_length   32   from llama\u{1b}[31mRED\u{1b}[0m.attention.value_length
   cache type     f16  2 bytes per element
-  context        16   tokens
-  batch          1    sequence
+  context        16   tokens per sequence
+  sequences      1
 
 formula
   K per layer and token = row_size(f16, 1 x 32 = 32) = 64 B
   V per layer and token = row_size(f16, 1 x 32 = 32) = 64 B
-  total = batch x ctx x block_count x (K + V)
+  total = sequences x ctx x block_count x (K + V)
         = 1 x 16 x 1 x 128 B
         = 2,048 B (2.00 KiB)

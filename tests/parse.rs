@@ -233,7 +233,7 @@ fn per_layer_head_counts_are_exposed() {
         )
         .build();
     let info = ModelInfo::from_file(&GgufFile::from_bytes(&bytes).unwrap());
-    assert_eq!(info.head_count_kv.unwrap().range(), (0, 8));
+    assert_eq!(info.head_count_kv.unwrap().range(), Some((0, 8)));
 }
 
 #[test]

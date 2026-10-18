@@ -7,8 +7,8 @@ use gguf_inspect::model::{PerLayer, file_type_name};
 use gguf_inspect::{GgufFile, ModelInfo, TypeStats};
 use serde::Serialize;
 
-use super::write_json;
-use crate::format::{Table, bytes, count, percent, thousands};
+use super::{PerLayerJson, write_json};
+use crate::format::{Table, attention, bytes, count, percent, thousands};
 use crate::{Failure, Outcome, escape, open};
 
 pub(crate) fn info(path: &Path, json: bool, out: &mut dyn Write) -> Result<Outcome, Failure> {
@@ -136,21 +136,19 @@ fn render(
     Ok(())
 }
 
-/// Uniform values with thousands separators; per-layer values as a range.
+/// Single values with thousands separators; per-layer lists as a range.
 fn per_layer(value: &PerLayer) -> String {
-    value.uniform().map_or_else(|| value.to_string(), thousands)
+    match value {
+        PerLayer::Uniform(v) => thousands(*v),
+        list @ PerLayer::List(_) => list.to_string(),
+    }
 }
 
 fn describe_kv_heads(kv: &PerLayer, heads: Option<&PerLayer>) -> String {
-    let attention = match (kv.uniform(), heads.and_then(PerLayer::uniform)) {
-        (Some(1), Some(h)) if h > 1 => " (multi-query attention)".to_owned(),
-        (Some(k), Some(h)) if k > 0 && k < h && h % k == 0 => {
-            format!(" (grouped-query attention, {} heads per KV head)", h / k)
-        }
-        (Some(k), Some(h)) if k == h => " (no GQA)".to_owned(),
-        _ => String::new(),
-    };
-    format!("{}{attention}", per_layer(kv))
+    match attention(kv, heads) {
+        Some(kind) => format!("{} ({kind})", per_layer(kv)),
+        None => per_layer(kv),
+    }
 }
 
 fn head_size(model: &ModelInfo) -> Option<String> {
@@ -191,22 +189,6 @@ fn tokenizer(model: &ModelInfo) -> Option<String> {
         (Some(m), Some(v)) => Some(format!("{m}, vocabulary {}", thousands(v))),
         (Some(m), None) => Some(m.clone()),
         (None, Some(v)) => Some(format!("vocabulary {}", thousands(v))),
-    }
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-enum PerLayerJson<'a> {
-    Uniform(u64),
-    PerLayer(&'a [u64]),
-}
-
-impl<'a> From<&'a PerLayer> for PerLayerJson<'a> {
-    fn from(p: &'a PerLayer) -> Self {
-        match p {
-            PerLayer::Uniform(v) => Self::Uniform(*v),
-            PerLayer::Varying(v) => Self::PerLayer(v),
-        }
     }
 }
 

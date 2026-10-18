@@ -1,6 +1,6 @@
 ---
 source: tests/cli.rs
-expression: "ok(dir.path(),\n&[\"kv-cache\", \"tiny.gguf\", \"--ctx\", \"4096\", \"--cache-type\", \"q8_0\", \"--batch\",\n\"4\"])"
+expression: sequences
 ---
 KV cache estimate for tiny.gguf (llama)
 
@@ -10,12 +10,12 @@ KV cache estimate for tiny.gguf (llama)
   key_length     64     embedding_length 256 / head_count 4
   value_length   64     embedding_length 256 / head_count 4
   cache type     q8_0   34 bytes per 32 elements
-  context        4,096  tokens
-  batch          4      sequences
+  context        4,096  tokens per sequence
+  sequences      4
 
 formula
   K per layer and token = row_size(q8_0, 2 x 64 = 128) = 136 B
   V per layer and token = row_size(q8_0, 2 x 64 = 128) = 136 B
-  total = batch x ctx x block_count x (K + V)
+  total = sequences x ctx x block_count x (K + V)
         = 4 x 4,096 x 2 x 272 B
         = 8,912,896 B (8.50 MiB)

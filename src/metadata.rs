@@ -97,6 +97,21 @@ impl ValueType {
         }
     }
 
+    /// Whether this is one of the eight integer types.
+    pub const fn is_integer(self) -> bool {
+        matches!(
+            self,
+            Self::U8
+                | Self::I8
+                | Self::U16
+                | Self::I16
+                | Self::U32
+                | Self::I32
+                | Self::U64
+                | Self::I64
+        )
+    }
+
     /// The fewest bytes a value of this type can occupy in a file: its fixed
     /// width, or the size of its length prefix (plus element type tag for arrays).
     pub(crate) const fn min_encoded_size(self) -> u64 {
@@ -550,6 +565,15 @@ mod tests {
         for t in ValueType::ALL {
             assert_eq!(ValueType::from_id(t.id()), Some(t));
         }
+        let integers: Vec<&str> = ValueType::ALL
+            .iter()
+            .filter(|t| t.is_integer())
+            .map(|t| t.name())
+            .collect();
+        assert_eq!(
+            integers,
+            ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"]
+        );
         assert_eq!(ValueType::from_id(13), None);
     }
 

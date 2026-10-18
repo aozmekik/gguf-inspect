@@ -1,0 +1,25 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"kv-cache\", \"mamba.gguf\", \"--ctx\", \"8192\"])"
+---
+KV cache estimate for mamba.gguf (mamba)
+
+  block_count    64
+  head_count     0
+  head_count_kv  0      no attention heads
+  key_length     0      unused: no layer has KV heads
+  value_length   0      unused: no layer has KV heads
+  cache type     f16    2 bytes per element
+  context        8,192  tokens per sequence
+  sequences      1
+
+formula
+  K per layer and token = row_size(f16, 0 x 0 = 0) = 0 B
+  V per layer and token = row_size(f16, 0 x 0 = 0) = 0 B
+  total = sequences x ctx x block_count x (K + V)
+        = 1 x 8,192 x 64 x 0 B
+        = 0 B
+
+notes
+  - recurrent (SSM) state is not included
+  - 64 layers have no KV heads

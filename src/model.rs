@@ -9,68 +9,94 @@ use std::fmt;
 use crate::GgufFile;
 use crate::metadata::{Metadata, MetadataValue};
 
-/// A hyperparameter that is either the same for every layer or given per layer.
+/// A hyperparameter given either once for all layers or once per layer.
 ///
 /// Most models store head counts as one integer; some (for example models with
 /// hybrid attention/recurrent layers) store an array with one entry per layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PerLayer {
-    /// The same value for every layer.
+    /// One integer that applies to every layer.
     Uniform(u64),
-    /// One value per layer, not all equal.
-    Varying(Vec<u64>),
+    /// An array with one entry per layer, as stored in the file. The entries
+    /// may all be equal; the array is kept so that its length can be checked
+    /// against `block_count`.
+    List(Vec<u64>),
 }
 
 impl PerLayer {
-    /// Interprets an integer or an array of non-negative integers.
+    /// Interprets an integer or an array of integers, all non-negative.
+    /// Returns `None` for anything else, including negative numbers, floats
+    /// and nested arrays.
+    ///
+    /// ```
+    /// use gguf_inspect::model::PerLayer;
+    /// use gguf_inspect::{MetadataArray, MetadataValue};
+    ///
+    /// assert_eq!(PerLayer::from_value(&MetadataValue::U32(8)), Some(PerLayer::Uniform(8)));
+    /// let list = MetadataValue::Array(MetadataArray::I32(vec![0, 8]));
+    /// assert_eq!(PerLayer::from_value(&list), Some(PerLayer::List(vec![0, 8])));
+    /// assert_eq!(PerLayer::from_value(&MetadataValue::I32(-8)), None);
+    /// ```
     pub fn from_value(value: &MetadataValue) -> Option<Self> {
         if let Some(v) = value.as_u64() {
             return Some(Self::Uniform(v));
         }
-        let values = value.as_array()?.to_u64_vec()?;
-        match values.as_slice() {
-            [] => None,
-            [first, rest @ ..] if rest.iter().all(|v| v == first) => Some(Self::Uniform(*first)),
-            _ => Some(Self::Varying(values)),
-        }
+        value.as_array()?.to_u64_vec().map(Self::List)
     }
 
-    /// The value for `layer`, or `None` if a per-layer list is too short.
+    /// The value for `layer`, or `None` past the end of a per-layer list.
     pub fn get(&self, layer: usize) -> Option<u64> {
         match self {
             Self::Uniform(v) => Some(*v),
-            Self::Varying(values) => values.get(layer).copied(),
+            Self::List(values) => values.get(layer).copied(),
         }
     }
 
-    /// The value, if it is the same for every layer.
+    /// The value, if every layer has the same one: a uniform value, or a
+    /// non-empty list whose entries are all equal.
     pub fn uniform(&self) -> Option<u64> {
         match self {
             Self::Uniform(v) => Some(*v),
-            Self::Varying(_) => None,
+            Self::List(values) => {
+                let (first, rest) = values.split_first()?;
+                rest.iter().all(|v| v == first).then_some(*first)
+            }
         }
     }
 
-    /// Smallest and largest value across layers.
-    pub fn range(&self) -> (u64, u64) {
+    /// Number of entries, if this is a per-layer list.
+    pub fn list_len(&self) -> Option<usize> {
         match self {
-            Self::Uniform(v) => (*v, *v),
-            Self::Varying(values) => (
-                values.iter().copied().min().unwrap_or(0),
-                values.iter().copied().max().unwrap_or(0),
-            ),
+            Self::Uniform(_) => None,
+            Self::List(values) => Some(values.len()),
+        }
+    }
+
+    /// Smallest and largest value, or `None` for an empty list.
+    pub fn range(&self) -> Option<(u64, u64)> {
+        match self {
+            Self::Uniform(v) => Some((*v, *v)),
+            Self::List(values) => {
+                Some((values.iter().copied().min()?, values.iter().copied().max()?))
+            }
         }
     }
 }
 
+/// `8`, `8 (32 per-layer entries)` or `0-8 (4 per-layer entries)`.
 impl fmt::Display for PerLayer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Uniform(v) => write!(f, "{v}"),
-            Self::Varying(values) => {
-                let (min, max) = self.range();
-                write!(f, "{min}-{max} across {} layers", values.len())
-            }
+        let Self::List(values) = self else {
+            return write!(f, "{}", self.uniform().unwrap_or_default());
+        };
+        let entries = match values.len() {
+            1 => "1 per-layer entry".to_owned(),
+            n => format!("{n} per-layer entries"),
+        };
+        match self.range() {
+            None => write!(f, "empty list"),
+            Some((min, max)) if min == max => write!(f, "{min} ({entries})"),
+            Some((min, max)) => write!(f, "{min}-{max} ({entries})"),
         }
     }
 }
@@ -212,22 +238,19 @@ impl ModelInfo {
     }
 }
 
-/// Looks up `[arch].key` for one architecture.
-pub(crate) struct Arch<'a> {
-    pub(crate) m: &'a Metadata,
-    pub(crate) prefix: Option<&'a str>,
+/// Looks up `[arch].key` for one architecture, leniently: a missing or
+/// mistyped key is `None`.
+struct Arch<'a> {
+    m: &'a Metadata,
+    prefix: Option<&'a str>,
 }
 
 impl<'a> Arch<'a> {
-    pub(crate) fn key(&self, key: &str) -> Option<String> {
-        self.prefix.map(|p| format!("{p}.{key}"))
+    fn get(&self, key: &str) -> Option<&'a MetadataValue> {
+        self.m.get(&format!("{}.{key}", self.prefix?))
     }
 
-    pub(crate) fn get(&self, key: &str) -> Option<&'a MetadataValue> {
-        self.m.get(&self.key(key)?)
-    }
-
-    pub(crate) fn u64(&self, key: &str) -> Option<u64> {
+    fn u64(&self, key: &str) -> Option<u64> {
         self.get(key)?.as_u64()
     }
 
@@ -244,7 +267,7 @@ impl<'a> Arch<'a> {
         self.get(key)?.as_str().map(str::to_owned)
     }
 
-    pub(crate) fn per_layer(&self, key: &str) -> Option<PerLayer> {
+    fn per_layer(&self, key: &str) -> Option<PerLayer> {
         PerLayer::from_value(self.get(key)?)
     }
 }
@@ -338,22 +361,36 @@ mod tests {
     #[test]
     fn per_layer_values() {
         let arr = |v: Vec<i32>| MetadataValue::Array(MetadataArray::I32(v));
-        assert_eq!(
-            PerLayer::from_value(&arr(vec![8, 8])),
-            Some(PerLayer::Uniform(8))
-        );
+        let same = PerLayer::from_value(&arr(vec![8, 8])).unwrap();
+        assert_eq!(same, PerLayer::List(vec![8, 8]), "the list length is kept");
+        assert_eq!(same.uniform(), Some(8));
+        assert_eq!(same.list_len(), Some(2));
+        assert_eq!(same.to_string(), "8 (2 per-layer entries)");
+
         let varying = PerLayer::from_value(&arr(vec![0, 8, 0, 8])).unwrap();
-        assert_eq!(varying.range(), (0, 8));
+        assert_eq!(varying.range(), Some((0, 8)));
         assert_eq!(varying.get(1), Some(8));
         assert_eq!(varying.get(4), None);
         assert_eq!(varying.uniform(), None);
-        assert_eq!(varying.to_string(), "0-8 across 4 layers");
-        assert_eq!(PerLayer::from_value(&arr(vec![])), None);
+        assert_eq!(varying.to_string(), "0-8 (4 per-layer entries)");
+        assert_eq!(PerLayer::List(vec![3]).to_string(), "3 (1 per-layer entry)");
+
+        let empty = PerLayer::from_value(&arr(vec![])).unwrap();
+        assert_eq!((empty.range(), empty.uniform()), (None, None));
+        assert_eq!(empty.to_string(), "empty list");
+
+        let uniform = PerLayer::Uniform(32);
+        assert_eq!((uniform.get(99), uniform.list_len()), (Some(32), None));
+        assert_eq!(uniform.to_string(), "32");
+
         assert_eq!(PerLayer::from_value(&arr(vec![-1])), None);
+        assert_eq!(PerLayer::from_value(&MetadataValue::F32(8.0)), None);
         assert_eq!(
             PerLayer::from_value(&MetadataValue::String("8".into())),
             None
         );
+        let nested = MetadataValue::Array(MetadataArray::Array(vec![MetadataArray::U8(vec![8])]));
+        assert_eq!(PerLayer::from_value(&nested), None);
     }
 
     #[test]

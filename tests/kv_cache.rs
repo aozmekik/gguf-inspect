@@ -109,7 +109,7 @@ fn notes_flag_unmodelled_attention() {
         e.notes,
         [
             KvCacheNote::SlidingWindow(4096),
-            KvCacheNote::LatentAttention(512)
+            KvCacheNote::UncompressedLatentAttention(512)
         ]
     );
 }
@@ -127,6 +127,127 @@ fn synthetic_llama3_shape() {
 }
 
 #[test]
+fn latent_attention_caches_the_latent_as_k_only() {
+    // DeepSeek-V3-shaped, as written by current converters: key_length and
+    // value_length describe the compressed latent (kv_lora_rank 512 + 64 rope
+    // dimensions), with one KV head. llama.cpp allocates no V cache.
+    let f = file(&[
+        (
+            "general.architecture",
+            MetadataValue::String("deepseek2".into()),
+        ),
+        ("deepseek2.block_count", MetadataValue::U32(61)),
+        ("deepseek2.embedding_length", MetadataValue::U32(7168)),
+        ("deepseek2.attention.head_count", MetadataValue::U32(128)),
+        ("deepseek2.attention.head_count_kv", MetadataValue::U32(1)),
+        ("deepseek2.attention.key_length", MetadataValue::U32(576)),
+        ("deepseek2.attention.value_length", MetadataValue::U32(512)),
+        (
+            "deepseek2.attention.key_length_mla",
+            MetadataValue::U32(192),
+        ),
+        (
+            "deepseek2.attention.value_length_mla",
+            MetadataValue::U32(128),
+        ),
+        ("deepseek2.attention.kv_lora_rank", MetadataValue::U32(512)),
+    ]);
+    let e = estimate(&f, &KvCacheConfig::new(8192)).unwrap();
+    assert!(!e.has_value_cache);
+    assert_eq!(e.k_bytes_per_token, 61 * 576 * 2);
+    assert_eq!(e.v_bytes_per_token, 0);
+    assert_eq!(e.total_bytes, 575_668_224); // 61 x 8192 x 1152 B
+    assert_eq!(
+        e.notes,
+        [KvCacheNote::LatentAttention {
+            key_length_mla: 192,
+            value_length_mla: 128
+        }]
+    );
+}
+
+#[test]
+fn older_latent_attention_files_cache_full_k_and_v() {
+    // The older DeepSeek-V2 layout has no *_mla keys; llama.cpp then treats the
+    // model as multi-head attention with per-head K (192) and V (128).
+    let f = file(&[
+        (
+            "general.architecture",
+            MetadataValue::String("deepseek2".into()),
+        ),
+        ("deepseek2.block_count", MetadataValue::U32(2)),
+        ("deepseek2.attention.head_count", MetadataValue::U32(16)),
+        ("deepseek2.attention.key_length", MetadataValue::U32(192)),
+        ("deepseek2.attention.value_length", MetadataValue::U32(128)),
+        ("deepseek2.attention.kv_lora_rank", MetadataValue::U32(512)),
+    ]);
+    let e = estimate(&f, &KvCacheConfig::new(1)).unwrap();
+    assert!(e.has_value_cache);
+    assert_eq!(e.k_bytes_per_token, 2 * 16 * 192 * 2);
+    assert_eq!(e.v_bytes_per_token, 2 * 16 * 128 * 2);
+    assert_eq!(e.notes, [KvCacheNote::UncompressedLatentAttention(512)]);
+}
+
+#[test]
+fn recurrent_models_have_no_kv_cache() {
+    // Mamba as written by llama.cpp's converter: head_count 0, no head_count_kv.
+    let f = file(&[
+        (
+            "general.architecture",
+            MetadataValue::String("mamba".into()),
+        ),
+        ("mamba.block_count", MetadataValue::U32(64)),
+        ("mamba.embedding_length", MetadataValue::U32(2560)),
+        ("mamba.attention.head_count", MetadataValue::U32(0)),
+        ("mamba.ssm.state_size", MetadataValue::U32(16)),
+    ]);
+    let e = estimate(&f, &KvCacheConfig::new(8192)).unwrap();
+    assert_eq!(e.total_bytes, 0);
+    assert_eq!((e.key_length, e.value_length), (0, 0));
+    assert_eq!(e.head_dim_source, HeadDimSource::Unused);
+    assert_eq!(
+        e.notes,
+        [
+            KvCacheNote::RecurrentState,
+            KvCacheNote::LayersWithoutKv(64)
+        ]
+    );
+}
+
+#[test]
+fn hybrid_head_count_lists_derive_from_attention_layers() {
+    let f = file(&[
+        ("general.architecture", MetadataValue::String("h".into())),
+        ("h.block_count", MetadataValue::U32(4)),
+        ("h.embedding_length", MetadataValue::U32(4096)),
+        (
+            "h.attention.head_count",
+            MetadataValue::Array(MetadataArray::U32(vec![0, 32, 0, 32])),
+        ),
+        (
+            "h.attention.head_count_kv",
+            MetadataValue::Array(MetadataArray::U32(vec![0, 8, 0, 8])),
+        ),
+    ]);
+    let e = estimate(&f, &KvCacheConfig::new(1)).unwrap();
+    assert_eq!(e.key_length, 128);
+    assert_eq!(e.k_bytes_per_token, 2 * 8 * 128 * 2);
+    assert_eq!(e.notes, [KvCacheNote::LayersWithoutKv(2)]);
+}
+
+#[test]
+fn zero_layers_give_an_empty_cache() {
+    let f = file(&[
+        ("general.architecture", MetadataValue::String("x".into())),
+        ("x.block_count", MetadataValue::U32(0)),
+        ("x.attention.head_count", MetadataValue::U32(8)),
+        ("x.embedding_length", MetadataValue::U32(512)),
+    ]);
+    let e = estimate(&f, &KvCacheConfig::new(4096)).unwrap();
+    assert_eq!((e.key_length, e.total_bytes), (64, 0));
+}
+
+#[test]
 fn errors() {
     let config = KvCacheConfig::new(1);
     assert_eq!(
@@ -138,16 +259,18 @@ fn errors() {
         estimate(&no_layers, &config),
         Err(KvCacheError::MissingKey("x.block_count".into()))
     );
-    let f = file(&[
-        (
-            "general.architecture",
-            MetadataValue::String("llama".into()),
-        ),
-        ("llama.block_count", MetadataValue::U32(1)),
-        ("llama.embedding_length", MetadataValue::U32(64)),
-        ("llama.attention.head_count", MetadataValue::U32(0)),
+
+    let zero_heads = file(&[
+        ("general.architecture", MetadataValue::String("x".into())),
+        ("x.block_count", MetadataValue::U32(1)),
+        ("x.embedding_length", MetadataValue::U32(64)),
+        ("x.attention.head_count", MetadataValue::U32(0)),
+        ("x.attention.head_count_kv", MetadataValue::U32(8)),
     ]);
-    assert_eq!(estimate(&f, &config), Err(KvCacheError::ZeroHeads));
+    assert_eq!(
+        estimate(&zero_heads, &config),
+        Err(KvCacheError::ZeroHeads("x.attention.head_count".into()))
+    );
 
     let mismatch = llama(&[(
         "llama.attention.head_count_kv",
@@ -173,7 +296,23 @@ fn errors() {
     ]);
     assert_eq!(
         estimate(&varying, &config),
-        Err(KvCacheError::VaryingHeadCount)
+        Err(KvCacheError::VaryingHeadCount(
+            "x.attention.head_count".into()
+        ))
+    );
+
+    let tiny_embedding = file(&[
+        ("general.architecture", MetadataValue::String("x".into())),
+        ("x.block_count", MetadataValue::U32(2)),
+        ("x.embedding_length", MetadataValue::U32(64)),
+        ("x.attention.head_count", MetadataValue::U32(128)),
+    ]);
+    assert_eq!(
+        estimate(&tiny_embedding, &config),
+        Err(KvCacheError::ZeroHeadSize {
+            embedding_length: 64,
+            head_count: 128
+        })
     );
 
     let odd = llama(&[("llama.attention.head_count_kv", MetadataValue::U32(1))]);
@@ -191,9 +330,86 @@ fn errors() {
 
     for err in [
         KvCacheError::MissingArchitecture,
-        KvCacheError::VaryingHeadCount,
+        KvCacheError::VaryingHeadCount("k".into()),
         KvCacheError::Overflow,
     ] {
         assert_ne!(err.to_string(), "");
     }
+}
+
+/// A key that is present but unusable is an error, never replaced by a default.
+#[test]
+fn present_but_invalid_keys_are_errors() {
+    let invalid = |key: &str, value: MetadataValue, found: &str| {
+        let full = format!("llama.{key}");
+        let f = file(&[
+            (
+                "general.architecture",
+                MetadataValue::String("llama".into()),
+            ),
+            ("llama.block_count", MetadataValue::U32(32)),
+            ("llama.embedding_length", MetadataValue::U32(4096)),
+            ("llama.attention.head_count", MetadataValue::U32(32)),
+            (full.as_str(), value),
+        ]);
+        let Err(KvCacheError::InvalidKey {
+            key: k, found: f, ..
+        }) = estimate(&f, &KvCacheConfig::new(1))
+        else {
+            panic!("{full}: expected InvalidKey");
+        };
+        assert_eq!((k.as_str(), f.as_str()), (full.as_str(), found));
+    };
+    invalid("attention.head_count_kv", MetadataValue::I32(-8), "i32 -8");
+    invalid("attention.head_count_kv", MetadataValue::F32(8.0), "f32 8");
+    invalid(
+        "attention.head_count_kv",
+        MetadataValue::Array(MetadataArray::Array(vec![MetadataArray::U32(vec![8])])),
+        "array[array]",
+    );
+    invalid(
+        "attention.head_count_kv",
+        MetadataValue::Array(MetadataArray::I32(vec![8, -8])),
+        "array[i32] with a negative entry",
+    );
+    invalid(
+        "attention.key_length",
+        MetadataValue::String("128".into()),
+        "a string",
+    );
+    invalid(
+        "attention.value_length",
+        MetadataValue::Array(MetadataArray::U32(vec![128])),
+        "array[u32]",
+    );
+    invalid(
+        "attention.key_length_mla",
+        MetadataValue::Bool(true),
+        "bool true",
+    );
+
+    // block_count itself, and a uniform-looking list of the wrong length.
+    let f = file(&[
+        (
+            "general.architecture",
+            MetadataValue::String("llama".into()),
+        ),
+        ("llama.block_count", MetadataValue::I64(-1)),
+    ]);
+    assert!(matches!(
+        estimate(&f, &KvCacheConfig::new(1)),
+        Err(KvCacheError::InvalidKey { .. })
+    ));
+    let same_values = llama(&[(
+        "llama.attention.head_count_kv",
+        MetadataValue::Array(MetadataArray::U32(vec![8, 8])),
+    )]);
+    assert_eq!(
+        estimate(&same_values, &KvCacheConfig::new(1)),
+        Err(KvCacheError::LayerCountMismatch {
+            key: "llama.attention.head_count_kv".into(),
+            expected: 32,
+            found: 2
+        })
+    );
 }

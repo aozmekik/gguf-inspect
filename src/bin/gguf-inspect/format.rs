@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 
+use gguf_inspect::model::PerLayer;
 use unicode_width::UnicodeWidthStr;
 
 use crate::escape;
@@ -60,6 +61,31 @@ pub(crate) fn percent(part: u64, total: u64) -> String {
 pub(crate) fn shape(dims: &[u64]) -> String {
     let inner: Vec<String> = dims.iter().map(u64::to_string).collect();
     format!("[{}]", inner.join(", "))
+}
+
+/// The attention variant implied by the KV head count, for example
+/// `"grouped-query attention, 4 heads per KV head"`.
+pub(crate) fn attention(kv: &PerLayer, heads: Option<&PerLayer>) -> Option<String> {
+    let heads = heads.and_then(PerLayer::uniform);
+    let Some(kv) = kv.uniform() else {
+        // Hybrid models list 0 KV heads for their recurrent layers.
+        let PerLayer::List(list) = kv else {
+            return None;
+        };
+        let with_kv = list.iter().filter(|&&h| h > 0).count();
+        return (with_kv < list.len())
+            .then(|| format!("KV heads in {with_kv} of {} layers", list.len()));
+    };
+    match (kv, heads?) {
+        (0, 0) => Some("no attention heads".to_owned()),
+        (k, h) if k == h => Some("multi-head attention".to_owned()),
+        (1, h) if h > 1 => Some("multi-query attention".to_owned()),
+        (k, h) if k > 0 && k < h && h % k == 0 => Some(format!(
+            "grouped-query attention, {} heads per KV head",
+            h / k
+        )),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +211,28 @@ mod tests {
         assert_eq!(percent(1, 0), "-");
         assert_eq!(shape(&[4096, 32]), "[4096, 32]");
         assert_eq!(shape(&[]), "[]");
+    }
+
+    #[test]
+    fn attention_variants() {
+        let u = PerLayer::Uniform;
+        let describe = |kv: u64, heads: u64| attention(&u(kv), Some(&u(heads)));
+        assert_eq!(describe(32, 32).as_deref(), Some("multi-head attention"));
+        assert_eq!(describe(1, 128).as_deref(), Some("multi-query attention"));
+        assert_eq!(
+            describe(8, 32).as_deref(),
+            Some("grouped-query attention, 4 heads per KV head")
+        );
+        assert_eq!(describe(0, 0).as_deref(), Some("no attention heads"));
+        assert_eq!(describe(3, 32), None);
+        assert_eq!(describe(1, 1).as_deref(), Some("multi-head attention"));
+        let hybrid = PerLayer::List(vec![0, 8, 0, 8]);
+        assert_eq!(
+            attention(&hybrid, Some(&u(32))).as_deref(),
+            Some("KV heads in 2 of 4 layers")
+        );
+        assert_eq!(attention(&PerLayer::List(vec![2, 4]), None), None);
+        assert_eq!(attention(&u(8), None), None);
     }
 
     #[test]

@@ -1,0 +1,24 @@
+---
+source: tests/cli.rs
+expression: "ok(dir.path(), &[\"kv-cache\", \"deepseek.gguf\", \"--ctx\", \"8192\"])"
+---
+KV cache estimate for deepseek.gguf (deepseek2)
+
+  block_count    61
+  head_count     128
+  head_count_kv  1      multi-query attention
+  key_length     576    from deepseek2.attention.key_length
+  value_length   512    from deepseek2.attention.value_length; not cached (multi-head latent attention)
+  cache type     f16    2 bytes per element
+  context        8,192  tokens per sequence
+  sequences      1
+
+formula
+  K per layer and token = row_size(f16, 1 x 576 = 576) = 1,152 B
+  V per layer and token = 0 B (no V cache with multi-head latent attention)
+  total = sequences x ctx x block_count x (K + V)
+        = 1 x 8,192 x 61 x 1,152 B
+        = 575,668,224 B (549.00 MiB)
+
+notes
+  - multi-head latent attention (key_length_mla 192, value_length_mla 128): the compressed latent is cached as K and there is no V cache, as in llama.cpp
