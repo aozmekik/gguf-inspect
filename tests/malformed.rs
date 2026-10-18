@@ -407,6 +407,49 @@ fn deeply_nested_arrays_hit_the_depth_limit() {
     assert!(parse(&bytes).is_ok());
 }
 
+/// `array[array[...]]` nested `depth` levels deep around one `u8`.
+fn nested(depth: u32) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for _ in 1..depth {
+        payload.extend_from_slice(&9_u32.to_le_bytes());
+        payload.extend_from_slice(&1_u64.to_le_bytes());
+    }
+    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&1_u64.to_le_bytes());
+    payload.push(7);
+    GgufBuilder::new().raw_kv(b"k", typed(9, &payload)).build()
+}
+
+#[test]
+fn raising_the_depth_limit_cannot_overflow_the_stack() {
+    // Without the ceiling, a debug build overflowed a 2 MiB stack at about
+    // 400 levels. Run on a small stack to show the ceiling holds with room
+    // to spare, including for clone, comparison and drop of the result.
+    let mut limits = Limits::default();
+    limits.max_array_depth = u32::MAX;
+    let deep = nested(100_000);
+    let at_ceiling = nested(Limits::MAX_ARRAY_DEPTH);
+    let small_stack = std::thread::Builder::new().stack_size(1 << 20);
+    small_stack
+        .spawn(move || {
+            let err =
+                GgufFile::from_reader(deep.as_slice(), deep.len() as u64, &limits).unwrap_err();
+            assert!(matches!(
+                err.kind(),
+                ErrorKind::NestingTooDeep { limit: 64 }
+            ));
+
+            let gguf =
+                GgufFile::from_reader(at_ceiling.as_slice(), at_ceiling.len() as u64, &limits)
+                    .unwrap();
+            let value = gguf.metadata().get("k").unwrap().clone();
+            assert!(value.bitwise_eq(gguf.metadata().get("k").unwrap()));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
 #[test]
 fn errors_display_offset_and_context() {
     let bytes = GgufBuilder::new()

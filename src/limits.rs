@@ -24,7 +24,10 @@ pub struct Limits {
     pub max_string_len: u64,
     /// Most elements accepted in one metadata array. Default: 2^24.
     pub max_array_len: u64,
-    /// Deepest accepted array nesting; a top-level array has depth 1. Default: 8.
+    /// Deepest accepted array nesting; a top-level array has depth 1.
+    /// Default: 8. Values above [`Limits::MAX_ARRAY_DEPTH`] (64) are treated
+    /// as 64: nested arrays are parsed, compared and dropped recursively, and
+    /// the ceiling keeps a hostile file from exhausting the stack.
     pub max_array_depth: u32,
     /// Most metadata entries accepted. Default: 2^20.
     pub max_metadata_entries: u64,
@@ -32,6 +35,18 @@ pub struct Limits {
     pub max_tensors: u64,
     /// Most dimensions accepted per tensor. Default: 4, ggml's `GGML_MAX_DIMS`.
     pub max_dims: u32,
+}
+
+impl Limits {
+    /// The highest nesting depth ever accepted, whatever
+    /// [`max_array_depth`](Self::max_array_depth) says. ggml's own reader
+    /// rejects nested arrays altogether.
+    pub const MAX_ARRAY_DEPTH: u32 = 64;
+
+    /// The nesting depth actually enforced.
+    pub(crate) fn array_depth(&self) -> u32 {
+        self.max_array_depth.min(Self::MAX_ARRAY_DEPTH)
+    }
 }
 
 impl Default for Limits {

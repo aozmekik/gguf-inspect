@@ -75,9 +75,10 @@ pub enum ErrorKind {
         /// The largest accepted value.
         limit: u64,
     },
-    /// Arrays are nested deeper than [`Limits::max_array_depth`](crate::Limits::max_array_depth).
+    /// Arrays are nested deeper than [`Limits::max_array_depth`](crate::Limits::max_array_depth)
+    /// (or [`Limits::MAX_ARRAY_DEPTH`](crate::Limits::MAX_ARRAY_DEPTH), whichever is lower).
     NestingTooDeep {
-        /// The configured depth limit.
+        /// The depth limit that was enforced.
         limit: u32,
     },
     /// A metadata key is the empty string.

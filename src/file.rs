@@ -541,13 +541,9 @@ impl<R: Read> Parser<'_, R> {
 
     fn array(&mut self, depth: u32) -> Result<MetadataArray> {
         let at = self.r.position();
-        if depth > self.limits.max_array_depth {
-            return Err(Error::new(
-                ErrorKind::NestingTooDeep {
-                    limit: self.limits.max_array_depth,
-                },
-                at,
-            ));
+        let limit = self.limits.array_depth();
+        if depth > limit {
+            return Err(Error::new(ErrorKind::NestingTooDeep { limit }, at));
         }
         let ty = self.value_type()?;
         let len_at = self.r.position();
