@@ -13,7 +13,6 @@ use crate::{Failure, Outcome, TensorSort, open};
 #[derive(Serialize)]
 struct TensorJson<'a> {
     name: &'a str,
-    #[serde(rename = "type")]
     ggml_type: &'static str,
     dims: &'a [u64],
     elements: u64,

@@ -136,7 +136,8 @@ fn float(shortest: &str) -> Json {
         .map_or(Json::Null, Json::Number)
 }
 
-/// JSON for a value; arrays keep at most `max_items` elements at the top level.
+/// JSON for a value; arrays, nested ones included, keep at most `max_items`
+/// elements.
 pub(crate) fn to_json(value: &MetadataValue, max_items: Option<usize>) -> Json {
     match value {
         MetadataValue::String(s) => Json::String(s.clone()),
@@ -156,10 +157,22 @@ fn array_to_json(array: &MetadataArray, max_items: Option<usize>) -> Json {
     let shown = max_items.map_or(array.len(), |m| array.len().min(m));
     let item = |i: usize| match array {
         MetadataArray::String(v) => Json::String(v[i].clone()),
-        MetadataArray::Array(v) => array_to_json(&v[i], None),
+        MetadataArray::Array(v) => array_to_json(&v[i], max_items),
         other => other.get(i).map_or(Json::Null, |item| to_json(&item, None)),
     };
     Json::Array((0..shown).map(item).collect())
+}
+
+/// Whether [`to_json`] with `max_items` leaves out elements, at any depth.
+pub(crate) fn json_truncated(value: &MetadataValue, max_items: Option<usize>) -> bool {
+    fn cut(array: &MetadataArray, max: usize) -> bool {
+        array.len() > max
+            || matches!(array, MetadataArray::Array(inner) if inner.iter().take(max).any(|a| cut(a, max)))
+    }
+    match (value, max_items) {
+        (MetadataValue::Array(a), Some(max)) => cut(a, max),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -219,5 +232,19 @@ mod tests {
         );
         let arr = MetadataValue::Array(MetadataArray::U8(vec![1, 2, 3]));
         assert_eq!(to_json(&arr, Some(2)).to_string(), "[1,2]");
+        assert!(json_truncated(&arr, Some(2)));
+        assert!(!json_truncated(&arr, Some(3)));
+        assert!(!json_truncated(&arr, None));
+    }
+
+    #[test]
+    fn json_cuts_nested_arrays_too() {
+        let v = MetadataValue::Array(MetadataArray::Array(vec![
+            MetadataArray::U8(vec![1, 2, 3]),
+            MetadataArray::U8(vec![4]),
+        ]));
+        assert_eq!(to_json(&v, Some(2)).to_string(), "[[1,2],[4]]");
+        assert!(json_truncated(&v, Some(2)), "the inner array is cut");
+        assert_eq!(to_json(&v, None).to_string(), "[[1,2,3],[4]]");
     }
 }

@@ -62,6 +62,7 @@ expression: r.stdout
         "type": "array",
         "element_type": "u16",
         "len": 20,
+        "truncated": true,
         "value": [
           0,
           1,
@@ -77,6 +78,7 @@ expression: r.stdout
         "type": "array",
         "element_type": "u16",
         "len": 20,
+        "truncated": true,
         "value": [
           0,
           1,
@@ -111,7 +113,7 @@ expression: r.stdout
       "change": "removed",
       "name": "added.weight",
       "old": {
-        "type": "f32",
+        "ggml_type": "f32",
         "dims": [
           32
         ]

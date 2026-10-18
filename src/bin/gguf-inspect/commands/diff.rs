@@ -10,7 +10,7 @@ use serde_json::Value as Json;
 
 use super::write_json;
 use crate::format::{Table, shape, thousands};
-use crate::values::{PREVIEW_ITEMS, Preview, render, to_json, type_name};
+use crate::values::{PREVIEW_ITEMS, Preview, json_truncated, render, to_json, type_name};
 use crate::{Failure, Outcome, escape, open};
 
 pub(crate) fn diff(
@@ -176,6 +176,8 @@ struct ValueJson {
     element_type: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     len: Option<usize>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    truncated: bool,
     value: Json,
 }
 
@@ -186,6 +188,7 @@ impl From<&MetadataValue> for ValueJson {
             value_type: value.value_type().name(),
             element_type: array.map(|a| a.element_type().name()),
             len: array.map(gguf_inspect::MetadataArray::len),
+            truncated: json_truncated(value, Some(PREVIEW_ITEMS)),
             value: to_json(value, Some(PREVIEW_ITEMS)),
         }
     }
@@ -193,7 +196,6 @@ impl From<&MetadataValue> for ValueJson {
 
 #[derive(Serialize)]
 struct TensorJson<'a> {
-    #[serde(rename = "type")]
     ggml_type: &'static str,
     dims: &'a [u64],
 }

@@ -10,7 +10,7 @@ expression: "serde_json::to_string_pretty(&parsed[0]).expect(\"json\")"
     128
   ],
   "elements": 32768,
+  "ggml_type": "q4_K",
   "name": "blk.0.attn_k.weight",
-  "offset": 111616,
-  "type": "q4_K"
+  "offset": 111616
 }

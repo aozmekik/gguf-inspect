@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 use gguf_inspect::model::{PerLayer, file_type_name};
-use gguf_inspect::{GgufFile, ModelInfo, TypeStats};
+use gguf_inspect::{GgufFile, Issue, ModelInfo, TypeStats};
 use serde::Serialize;
 
 use super::{PerLayerJson, plural, write_json};
@@ -15,11 +15,11 @@ pub(crate) fn info(path: &Path, json: bool, out: &mut dyn Write) -> Result<Outco
     let gguf = open(path)?;
     let model = ModelInfo::from_file(&gguf);
     let breakdown = gguf.type_breakdown();
-    let warnings: Vec<String> = gguf.validate().iter().map(ToString::to_string).collect();
+    let warnings = gguf.validate();
     if json {
         write_json(
             out,
-            &InfoJson::new(path, &gguf, &model, &breakdown, warnings),
+            &InfoJson::new(path, &gguf, &model, &breakdown, &warnings),
         )?;
     } else {
         render(out, path, &gguf, &model, &breakdown, &warnings)?;
@@ -33,7 +33,7 @@ fn render(
     gguf: &GgufFile,
     model: &ModelInfo,
     breakdown: &[TypeStats],
-    warnings: &[String],
+    warnings: &[Issue],
 ) -> Result<(), Failure> {
     let mut file = Table::plain();
     file.row(["file".to_owned(), path.display().to_string()]);
@@ -133,7 +133,7 @@ fn render(
         writeln!(out)?;
         writeln!(out, "warnings")?;
         for w in warnings {
-            writeln!(out, "  - {}", escape::text(w))?;
+            writeln!(out, "  - {}", escape::text(&w.to_string()))?;
         }
     }
     Ok(())
@@ -259,7 +259,31 @@ struct InfoJson<'a> {
     tensor_data_size: u64,
     model: ModelJson<'a>,
     quantization: Vec<QuantJson>,
-    warnings: Vec<String>,
+    warnings: Vec<WarningJson>,
+}
+
+#[derive(Serialize)]
+struct WarningJson {
+    kind: &'static str,
+    message: String,
+}
+
+impl From<&Issue> for WarningJson {
+    fn from(issue: &Issue) -> Self {
+        let kind = match issue {
+            Issue::MissingArchitecture => "missing_architecture",
+            Issue::MissingQuantizationVersion => "missing_quantization_version",
+            Issue::AlignmentNotMultipleOf8(_) => "alignment_not_multiple_of_8",
+            Issue::MisalignedTensors { .. } => "misaligned_tensors",
+            Issue::DataOutOfBounds { .. } => "data_out_of_bounds",
+            Issue::OverlappingTensors { .. } => "overlapping_tensors",
+            _ => "other",
+        };
+        Self {
+            kind,
+            message: issue.to_string(),
+        }
+    }
 }
 
 impl<'a> InfoJson<'a> {
@@ -268,7 +292,7 @@ impl<'a> InfoJson<'a> {
         gguf: &GgufFile,
         m: &'a ModelInfo,
         breakdown: &[TypeStats],
-        warnings: Vec<String>,
+        warnings: &[Issue],
     ) -> Self {
         Self {
             file: path.display().to_string(),
@@ -321,7 +345,41 @@ impl<'a> InfoJson<'a> {
                     bits_per_weight: s.ggml_type.bits_per_element(),
                 })
                 .collect(),
-            warnings,
+            warnings: warnings.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_issue_has_a_kind() {
+        let issues = [
+            Issue::MissingArchitecture,
+            Issue::MissingQuantizationVersion,
+            Issue::AlignmentNotMultipleOf8(4),
+            Issue::MisalignedTensors {
+                tensors: 1,
+                first: "t".into(),
+                offset: 1,
+                alignment: 32,
+            },
+            Issue::DataOutOfBounds {
+                tensors: 1,
+                first: "t".into(),
+                data_end: 2,
+                file_size: 1,
+            },
+            Issue::OverlappingTensors {
+                tensors: 1,
+                first: "u".into(),
+                overlapped: "t".into(),
+            },
+        ];
+        for issue in &issues {
+            assert_ne!(WarningJson::from(issue).kind, "other", "{issue}");
         }
     }
 }

@@ -42,14 +42,14 @@ expression: r.stdout
       "change": "changed",
       "name": "token_embd.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           512
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           512
@@ -60,14 +60,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.0.attn_q.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           256
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           256
@@ -78,14 +78,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.0.attn_k.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           128
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           128
@@ -96,14 +96,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.0.attn_output.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           256
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           256
@@ -114,14 +114,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.0.ffn_gate.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           512
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           512
@@ -132,14 +132,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.0.ffn_up.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           512
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           512
@@ -150,14 +150,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.1.attn_q.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           256
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           256
@@ -168,14 +168,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.1.attn_k.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           128
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           128
@@ -186,14 +186,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.1.attn_output.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           256
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           256
@@ -204,14 +204,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.1.ffn_gate.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           512
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           512
@@ -222,14 +222,14 @@ expression: r.stdout
       "change": "changed",
       "name": "blk.1.ffn_up.weight",
       "old": {
-        "type": "q4_K",
+        "ggml_type": "q4_K",
         "dims": [
           256,
           512
         ]
       },
       "new": {
-        "type": "q5_K",
+        "ggml_type": "q5_K",
         "dims": [
           256,
           512

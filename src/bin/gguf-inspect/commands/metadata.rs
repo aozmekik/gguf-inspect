@@ -9,7 +9,7 @@ use serde_json::Value as Json;
 
 use super::{JsonSeq, write_json};
 use crate::format::Columns;
-use crate::values::{PREVIEW_ITEMS, Preview, render, to_json, type_name};
+use crate::values::{PREVIEW_ITEMS, Preview, json_truncated, render, to_json, type_name};
 use crate::{Failure, Outcome, escape, open};
 
 #[derive(Serialize)]
@@ -50,7 +50,7 @@ pub(crate) fn metadata(
                     value_type: value.value_type().name(),
                     element_type: array.map(|a| a.element_type().name()),
                     len: array.map(gguf_inspect::MetadataArray::len),
-                    truncated: array.is_some_and(|a| max_items.is_some_and(|m| a.len() > m)),
+                    truncated: json_truncated(value, max_items),
                     value: to_json(value, max_items),
                 }
             })
