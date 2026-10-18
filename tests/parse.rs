@@ -122,22 +122,14 @@ fn type_breakdown_sorts_by_bytes() {
         .tensor("c", &[8], GgmlType::F32)
         .build();
     let gguf = GgufFile::from_bytes(&bytes).unwrap();
+    let breakdown: Vec<(GgmlType, usize, u64, u64)> = gguf
+        .type_breakdown()
+        .iter()
+        .map(|s: &TypeStats| (s.ggml_type, s.tensors, s.elements, s.bytes))
+        .collect();
     assert_eq!(
-        gguf.type_breakdown(),
-        [
-            TypeStats {
-                ggml_type: GgmlType::Q6_K,
-                tensors: 1,
-                elements: 1024,
-                bytes: 840,
-            },
-            TypeStats {
-                ggml_type: GgmlType::F32,
-                tensors: 2,
-                elements: 40,
-                bytes: 160,
-            },
-        ]
+        breakdown,
+        [(GgmlType::Q6_K, 1, 1024, 840), (GgmlType::F32, 2, 40, 160)]
     );
 }
 

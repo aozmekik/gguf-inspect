@@ -13,6 +13,9 @@ use crate::metadata::{Metadata, MetadataValue};
 ///
 /// Most models store head counts as one integer; some (for example models with
 /// hybrid attention/recurrent layers) store an array with one entry per layer.
+///
+/// Unlike most public enums of this crate, `PerLayer` is exhaustive: a value
+/// is either given once or once per layer, so callers can match both cases.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PerLayer {
     /// One integer that applies to every layer.
@@ -272,15 +275,26 @@ impl<'a> Arch<'a> {
     }
 }
 
-/// Name of a `general.file_type` value, as listed in the GGUF specification
-/// (IDs 0-18). Newer IDs defined only by llama.cpp return `None`.
+/// Name of a `general.file_type` value (the type of most tensors).
+///
+/// IDs 0-18 are named as in the GGUF specification. IDs 19-41 are defined
+/// only by llama.cpp (`enum llama_ftype` in `include/llama.h` at commit
+/// [`547208d`]); llama.cpp has since removed some IDs (4-6 and 33-35), whose
+/// names are kept because older files still carry them. Newer IDs return
+/// `None`.
 ///
 /// ```
-/// assert_eq!(gguf_inspect::model::file_type_name(15), Some("MOSTLY_Q4_K_M"));
-/// assert_eq!(gguf_inspect::model::file_type_name(99), None);
+/// use gguf_inspect::model::file_type_name;
+///
+/// assert_eq!(file_type_name(15), Some("MOSTLY_Q4_K_M"));
+/// assert_eq!(file_type_name(32), Some("MOSTLY_BF16"));
+/// assert_eq!(file_type_name(99), None);
 /// ```
+///
+/// [`547208d`]: https://github.com/ggml-org/llama.cpp/blob/547208dca250ceb3e4c8615598d043f2b602a527/include/llama.h
 pub fn file_type_name(id: u64) -> Option<&'static str> {
-    const NAMES: [&str; 19] = [
+    const NAMES: [&str; 42] = [
+        // GGUF specification
         "ALL_F32",
         "MOSTLY_F16",
         "MOSTLY_Q4_0",
@@ -300,6 +314,30 @@ pub fn file_type_name(id: u64) -> Option<&'static str> {
         "MOSTLY_Q5_K_S",
         "MOSTLY_Q5_K_M",
         "MOSTLY_Q6_K",
+        // llama.cpp only
+        "MOSTLY_IQ2_XXS",
+        "MOSTLY_IQ2_XS",
+        "MOSTLY_Q2_K_S",
+        "MOSTLY_IQ3_XS",
+        "MOSTLY_IQ3_XXS",
+        "MOSTLY_IQ1_S",
+        "MOSTLY_IQ4_NL",
+        "MOSTLY_IQ3_S",
+        "MOSTLY_IQ3_M",
+        "MOSTLY_IQ2_S",
+        "MOSTLY_IQ2_M",
+        "MOSTLY_IQ4_XS",
+        "MOSTLY_IQ1_M",
+        "MOSTLY_BF16",
+        "MOSTLY_Q4_0_4_4",
+        "MOSTLY_Q4_0_4_8",
+        "MOSTLY_Q4_0_8_8",
+        "MOSTLY_TQ1_0",
+        "MOSTLY_TQ2_0",
+        "MOSTLY_MXFP4_MOE",
+        "MOSTLY_NVFP4",
+        "MOSTLY_Q1_0",
+        "MOSTLY_Q2_0",
     ];
     NAMES.get(usize::try_from(id).ok()?).copied()
 }
@@ -394,10 +432,15 @@ mod tests {
     }
 
     #[test]
-    fn file_type_names_follow_the_spec() {
+    fn file_type_names_follow_the_spec_then_llama_cpp() {
         assert_eq!(file_type_name(0), Some("ALL_F32"));
         assert_eq!(file_type_name(18), Some("MOSTLY_Q6_K"));
-        assert_eq!(file_type_name(19), None);
+        assert_eq!(file_type_name(19), Some("MOSTLY_IQ2_XXS"));
+        assert_eq!(file_type_name(30), Some("MOSTLY_IQ4_XS"));
+        assert_eq!(file_type_name(36), Some("MOSTLY_TQ1_0"));
+        assert_eq!(file_type_name(38), Some("MOSTLY_MXFP4_MOE"));
+        assert_eq!(file_type_name(41), Some("MOSTLY_Q2_0"));
+        assert_eq!(file_type_name(42), None);
         assert_eq!(file_type_name(u64::MAX), None);
     }
 }

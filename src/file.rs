@@ -334,6 +334,7 @@ impl GgufFile {
 
 /// Aggregate size of all tensors of one ggml type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TypeStats {
     /// The element type.
     pub ggml_type: GgmlType,
