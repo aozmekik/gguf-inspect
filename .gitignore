@@ -11,6 +11,8 @@
 
 # Synthetic model files produced by examples and benchmarks
 *.gguf
+# ...except the small fixtures written by gguf-py (see their README)
+!/tests/fixtures/gguf-py/*.gguf
 
 # Coverage and profiling output
 /coverage/
@@ -28,3 +30,5 @@ lcov.info
 # Local environment
 .env
 .env.*
+.venv/
+__pycache__/

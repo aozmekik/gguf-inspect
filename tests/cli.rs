@@ -474,6 +474,22 @@ fn diff() {
     assert_snapshot!("diff_every_kind_json", r.stdout);
 }
 
+/// Files written by gguf-py, llama.cpp's reference writer (see
+/// tests/fixtures/gguf-py/README.md).
+#[test]
+fn files_written_by_gguf_py() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/gguf-py");
+    assert_snapshot!("gguf_py_info", ok(&dir, &["info", "little-endian.gguf"]));
+    assert_snapshot!(
+        "gguf_py_metadata",
+        ok(&dir, &["metadata", "little-endian.gguf"])
+    );
+    assert_snapshot!("gguf_py_tensors", ok(&dir, &["tensors", "aligned-64.gguf"]));
+    let r = run(&dir, &["info", "big-endian.gguf"]);
+    assert_eq!(r.code, 2);
+    assert!(r.stderr.contains("big-endian GGUF files are not supported"));
+}
+
 #[test]
 fn types() {
     let dir = fixtures();

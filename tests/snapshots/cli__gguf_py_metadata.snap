@@ -1,0 +1,35 @@
+---
+source: tests/cli.rs
+expression: "ok(&dir, &[\"metadata\", \"little-endian.gguf\"])"
+---
+KEY                            TYPE           VALUE
+general.architecture           string         "llama"
+general.name                   string         "Synthetic gguf-py fixture"
+general.quantization_version   u32            2
+general.file_type              u32            7
+llama.context_length           u32            4096
+llama.embedding_length         u32            32
+llama.block_count              u32            2
+llama.attention.head_count     u32            4
+llama.attention.head_count_kv  u32            2
+llama.rope.freq_base           f32            10000.0
+test.u8                        u8             200
+test.i8                        i8             -100
+test.u16                       u16            60000
+test.i16                       i16            -30000
+test.u32                       u32            4000000000
+test.i32                       i32            -2000000000
+test.f32                       f32            0.1
+test.bool                      bool           true
+test.string                    string         "héllo, wörld"
+test.u64                       u64            18446744073709551615
+test.i64                       i64            -9223372036854775808
+test.f64                       f64            -1.5e300
+tokenizer.ggml.model           string         "llama"
+tokenizer.ggml.tokens          array[string]  ["<unk>", "<s>", "</s>", "▁a", "▁b"]
+tokenizer.ggml.scores          array[f32]     [0.0, 0.0, 0.0, -1.0, -2.0]
+tokenizer.ggml.token_type      array[i32]     [2, 3, 3, 1, 1]
+test.array.u16                 array[u16]     [1, 2, 65535]
+test.array.f64                 array[f64]     [0.5, -0.25]
+test.array.bools               array[bool]    [true, false, true]
+test.array.nested              array[array]   [[1, 2], [3], ["x", "y"]]

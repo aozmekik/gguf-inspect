@@ -1,0 +1,29 @@
+---
+source: tests/cli.rs
+expression: "ok(&dir, &[\"info\", \"little-endian.gguf\"])"
+---
+file      little-endian.gguf
+size      2.38 KiB (2,432 bytes)
+format    GGUF v3, alignment 32, data offset 1,568
+metadata  30 entries
+tensors   5
+
+architecture    llama
+name            Synthetic gguf-py fixture
+parameters      263 (263)
+file type       MOSTLY_Q8_0 (7)
+context length  4,096
+embedding       32
+layers          2
+heads           4
+kv heads        2 (grouped-query attention, 2 heads per KV head)
+rope            freq base 10000
+tokenizer       llama, vocabulary 5
+
+quantization
+  TYPE  TENSORS  PARAMETERS  BYTES  SHARE    BPW
+  f32         1         160  640 B  79.6%  32.00
+  q8_0        1          64   68 B   8.5%   8.50
+  f16         1          32   64 B   8.0%  16.00
+  i32         1           6   24 B   3.0%  32.00
+  f64         1           1    8 B   1.0%  64.00
