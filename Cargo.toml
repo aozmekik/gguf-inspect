@@ -69,6 +69,10 @@ name = "cli"
 required-features = ["cli"]
 
 [[test]]
+name = "cli_properties"
+required-features = ["cli"]
+
+[[test]]
 name = "real_models"
 required-features = ["cli"]
 
