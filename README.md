@@ -58,7 +58,7 @@ Not yet published to crates.io. Minimum supported Rust version: 1.88
 was run locally with Rust 1.99.1 and 1.91.1).
 
 ```sh
-cargo install --locked --git https://github.com/aozmekik/gguf-inspect gguf-inspect
+cargo install --locked --git https://github.com/aozmekik/gguf-inspect --tag v0.1.0 gguf-inspect
 ```
 
 The trailing package name is needed because the repository also contains the
